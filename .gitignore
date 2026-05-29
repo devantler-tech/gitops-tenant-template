@@ -1,5 +1,5 @@
-# Never commit decrypted/plaintext secrets — only SOPS-encrypted *.enc.yaml.
-*.dec.yaml
+# Never commit plaintext secrets — tenant secrets live in OpenBao and are
+# delivered into the cluster via External Secrets (see deploy/externalsecret.yaml).
 .env
 .env.*
 !.env.example

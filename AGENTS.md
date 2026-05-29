@@ -19,7 +19,8 @@ platform Kubernetes cluster as an OCI-packaged Kustomize app.>
 ## Structure
 
 - `deploy/` — Kustomize manifests for the platform cluster (Deployment, Service,
-  HTTPRoute, an optional CNPG Cluster, and SOPS-encrypted `*.enc.yaml` secrets).
+  HTTPRoute, an optional CNPG Cluster, and — when the app needs secrets — a
+  namespaced `SecretStore` + `ExternalSecret` sourcing them from OpenBao).
 - `.github/workflows/` — `ci.yaml` (PR gate), `release.yaml` (semantic-release on
   `main`), `cd.yaml` (publish the signed OCI artifact on `v*` tags).
 

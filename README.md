@@ -49,7 +49,6 @@ AGENTS.md
 .github/dependabot.yml
 .releaserc
 .gitignore
-.sops.yaml
 Dockerfile
 README.md
 LICENSE
