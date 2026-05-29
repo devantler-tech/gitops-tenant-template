@@ -1,0 +1,8 @@
+# Never commit decrypted/plaintext secrets — only SOPS-encrypted *.enc.yaml.
+*.dec.yaml
+.env
+.env.*
+!.env.example
+
+# OS / editor cruft
+.DS_Store

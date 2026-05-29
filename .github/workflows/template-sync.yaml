@@ -1,0 +1,22 @@
+name: 🔄 Template Sync
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  template-sync:
+    # Skipped in the template repo itself (it is the sync source); runs in every
+    # tenant created from this template, where it opens a PR with template changes.
+    if: github.repository != 'devantler-tech/gitops-tenant-template'
+    # Pinned to the commit that introduces the reusable workflow
+    # (devantler-tech/reusable-workflows#261). Re-pin to the released tag (vX.Y.Z)
+    # once that PR is merged and released.
+    uses: devantler-tech/reusable-workflows/.github/workflows/template-sync.yaml@733557c47a43c9f1b4ffde77cd0fdd29d790856b # reusable-workflows#261 (pending release)
+    with:
+      source-repo-path: devantler-tech/gitops-tenant-template
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}

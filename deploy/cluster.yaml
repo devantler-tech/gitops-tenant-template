@@ -1,0 +1,22 @@
+# CloudNativePG database for the tenant. Delete this file (and its entry in
+# kustomization.yaml) if your tenant does not need a database. The operator
+# generates an `<metadata.name>-app` Secret whose `uri` key is consumed by the
+# Deployment's DATABASE_URL.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: app-db
+  labels:
+    app.kubernetes.io/name: app
+spec:
+  instances: 1
+  storage:
+    size: 1Gi
+  bootstrap:
+    initdb:
+      database: app
+      owner: app
+  postgresql:
+    parameters:
+      max_connections: "50"
+      shared_buffers: "64MB"

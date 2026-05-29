@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - cluster.yaml # CloudNativePG database — delete this line if your tenant has no DB
+  - deployment.yaml
+  - httproute.yaml
+  - service.yaml
+  # After creating and SOPS-encrypting your secret, add it here:
+  # - app-secret.enc.yaml

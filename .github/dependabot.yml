@@ -1,0 +1,20 @@
+version: 2
+updates:
+  # Baseline ecosystems shared by every tenant. Tenants whose stack needs more
+  # ecosystems (e.g. npm, gomod, nuget) add them here and list this file in
+  # `.templatesyncignore` so template-sync does not overwrite their additions.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 7
