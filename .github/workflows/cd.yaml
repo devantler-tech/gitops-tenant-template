@@ -9,6 +9,7 @@ permissions: {}
 
 jobs:
   publish:
+    name: Publish
     # Skipped in the template repo itself (it ships no app); runs in every tenant
     # created from this template.
     if: github.repository != 'devantler-tech/gitops-tenant-template'

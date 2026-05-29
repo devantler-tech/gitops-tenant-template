@@ -16,7 +16,7 @@ fill in the scaffolding.
 1. Click **"Use this template" → Create a new repository** (or
    `gh repo create devantler-tech/<tenant> --template devantler-tech/gitops-tenant-template --private`).
 2. Replace the scaffolding with your app: application code, `Dockerfile`, the
-   `deploy/` manifests, and the `ci.yaml` jobs.
+   `deploy/` manifests, the `ci.yaml` jobs, and fill in `AGENTS.md`.
 3. Create `.templatesyncignore` (see below).
 4. Register the tenant on the platform — follow
    [`platform/docs/TENANTS.md`](https://github.com/devantler-tech/platform/blob/main/docs/TENANTS.md).
@@ -36,12 +36,15 @@ app code.
 | `.github/workflows/cd.yaml` | On a `v*` tag, calls `publish-app.yaml` to build, digest-pin, push, and **cosign-sign** the image + manifests OCI artifact |
 | `.github/workflows/release.yaml` | semantic-release on `main` (cuts the `v*` tags that drive `cd.yaml`) |
 | `.github/workflows/template-sync.yaml` | Opens the weekly template-sync PR |
-| `AGENTS.md` | Shared tenant conventions for AI agents |
+| `CLAUDE.md` | `@AGENTS.md` shim |
+| `zizmor.yml` | GitHub Actions pinning policy enforced by the security scan |
 
 **Yours (list these in `.templatesyncignore`):**
 
 ```gitignore
 # Files this tenant owns — template-sync must never overwrite them.
+AGENTS.md
+.claude/skills/maintain/SKILL.md
 .github/workflows/ci.yaml
 .github/dependabot.yml
 .releaserc
@@ -53,6 +56,10 @@ LICENSE
 deploy/
 .templatesyncignore
 ```
+
+`AGENTS.md` and the `maintain` skill ship as scaffolding (a starting point for new
+tenants) but are **yours** — they carry your project-specific overview, so they are
+ignored from sync.
 
 ## How publishing works
 
