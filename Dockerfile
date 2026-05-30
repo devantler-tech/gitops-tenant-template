@@ -1,19 +1,13 @@
 # Placeholder Dockerfile — replace with your application's build.
 #
-# It must produce an image that listens on the port your deploy/ manifests
-# expose (the skeleton uses 3000) and runs as a non-root user (the platform
-# namespace enforces the PodSecurity "restricted" profile). A typical shape:
-#
-#   FROM <builder> AS build
-#   WORKDIR /app
-#   COPY . .
-#   RUN <build your app>
-#
-#   FROM <runtime>
-#   WORKDIR /app
-#   COPY --from=build /app/dist ./
-#   EXPOSE 3000
-#   USER 1000
-#   CMD ["<run your app>"]
-FROM alpine:3.22
-RUN echo "Replace this Dockerfile with your application's build."
+# It is deliberately self-consistent with the deploy/ scaffold so a freshly
+# created tenant deploys cleanly before you swap in your real app: it runs as a
+# non-root user and serves HTTP on port 3000, matching deploy/deployment.yaml's
+# securityContext (runAsNonRoot, readOnlyRootFilesystem) and its liveness/readiness
+# probes. Replace it with your stack's (typically multi-stage) build.
+FROM python:3.13-alpine
+WORKDIR /app
+RUN printf '<!doctype html><title>gitops-tenant-template</title><h1>Replace this placeholder with your app.</h1>\n' > index.html
+EXPOSE 3000
+USER 1000
+CMD ["python", "-m", "http.server", "3000"]
