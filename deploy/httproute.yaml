@@ -1,0 +1,18 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: app
+  labels:
+    app.kubernetes.io/name: app
+spec:
+  # Attaches to the shared platform Gateway (Cilium, in kube-system).
+  parentRefs:
+    - name: platform
+      namespace: kube-system
+      sectionName: https
+  hostnames:
+    - app.platform.lan # replace with your tenant's hostname
+  rules:
+    - backendRefs:
+        - name: app
+          port: 80

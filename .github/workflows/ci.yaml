@@ -1,0 +1,32 @@
+name: ✅ CI
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+# This is an EXAMPLE CI workflow. Replace the `example` job with your stack's
+# lint / type-check / test / build jobs, and list every job your tenant adds in
+# the `ci-required-checks` aggregator below. This file is yours to own — add it
+# to `.templatesyncignore` so template-sync never overwrites your stack's CI.
+jobs:
+  example:
+    name: Example
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Placeholder
+        run: echo "Replace this job with your stack's lint, test, and build steps."
+
+  ci-required-checks:
+    name: CI - Required Checks
+    runs-on: ubuntu-latest
+    needs: [example]
+    permissions: {}
+    if: ${{ always() }}
+    steps:
+      - name: 📊 Require all CI checks to pass
+        uses: devantler-tech/actions/aggregate-job-checks@6916c45ed8dc22e62cb12f021480e29732d03575 # v5.1.0
+        with:
+          job-results: ${{ needs.example.result }}

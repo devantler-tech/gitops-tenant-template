@@ -1,0 +1,25 @@
+name: 🚀 CD
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions: {}
+
+jobs:
+  publish:
+    name: Publish
+    # Skipped in the template repo itself (it ships no app); runs in every tenant
+    # created from this template.
+    if: github.repository != 'devantler-tech/gitops-tenant-template'
+    permissions:
+      contents: read # checkout
+      packages: write # push image + manifests OCI artifact
+      id-token: write # keyless cosign signing (via GitHub OIDC)
+    uses: devantler-tech/reusable-workflows/.github/workflows/publish-app.yaml@b748f68a0d14ad477cb9610a6d1f958bf75e91dc # v5.2.0
+    with:
+      # publish-app pins the freshly built image digest into the container with
+      # this name in deploy/deployment.yaml. Keep that container's name equal to
+      # the repository name (the platform's signed-publish convention).
+      app-name: ${{ github.event.repository.name }}
