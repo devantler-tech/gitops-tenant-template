@@ -36,9 +36,9 @@ app code.
 | `.github/workflows/cd.yaml` | On a `v*` tag, calls `publish-app.yaml` to build, digest-pin, push, and **cosign-sign** the image + manifests OCI artifact |
 | `.github/workflows/release.yaml` | semantic-release on `main` (cuts the `v*` tags that drive `cd.yaml`) |
 | `.github/workflows/template-sync.yaml` | Opens the weekly template-sync PR |
-| `.github/workflows/validate-scaffold.yaml` | Builds `deploy/` (`kubectl kustomize`) to gate template-repo PRs against a broken scaffold; **no-ops in tenants** (you validate your own `deploy/` via `ci.yaml`) |
+| `.github/workflows/validate-template.yaml` | Gates template-repo PRs against a broken `deploy/` scaffold (`kubectl kustomize`) **and** against insecure/unpinned plumbing (`zizmor` scan); **no-ops in tenants** (you validate your own `deploy/` + `ci.yaml`) |
 | `CLAUDE.md` | `@AGENTS.md` shim |
-| `zizmor.yml` | GitHub Actions pinning policy enforced by the security scan |
+| `zizmor.yml` | GitHub Actions pinning policy enforced by the `zizmor` scan in `validate-template.yaml` |
 
 **Yours (list these in `.templatesyncignore`):**
 
@@ -78,6 +78,7 @@ only artifacts from this trusted workflow are reconciled.
 ## Validate locally
 
 ```sh
-kubectl kustomize deploy/        # manifests build
+kubectl kustomize deploy/        # manifests build (gated by validate-template.yaml)
 actionlint .github/workflows/*   # workflows parse
+zizmor .github/workflows/        # action-pinning policy (gated by validate-template.yaml)
 ```
