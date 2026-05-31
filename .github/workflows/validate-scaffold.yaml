@@ -1,0 +1,36 @@
+name: 🧱 Validate Scaffold
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+# Template-repo-only scaffold-integrity gate. The deploy/ Kustomize manifests are
+# this template's core deliverable — every new tenant inherits them — so a PR that
+# breaks the kustomization (a renamed/removed resource, a YAML error) must not
+# merge green and ship broken manifests downstream. This job runs ONLY in the
+# template repo; it no-ops in tenants created from it (the guard below is false
+# there), mirroring how cd.yaml/release.yaml run only in tenants. Tenants replace
+# deploy/ with their own app and validate it via their own ci.yaml.
+jobs:
+  validate-scaffold:
+    name: Validate Scaffold
+    if: github.repository == 'devantler-tech/gitops-tenant-template'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout
+    steps:
+      - name: 🔒 Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - name: 📥 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false # read-only job; never pushes, so don't keep the token
+      - name: 🧱 Build deploy/ manifests
+        # kubectl (with embedded kustomize) is preinstalled on ubuntu-latest. This
+        # mirrors the README's documented local check; it renders the manifests to
+        # catch a broken kustomization without needing a cluster or CRDs.
+        run: kubectl kustomize deploy/
