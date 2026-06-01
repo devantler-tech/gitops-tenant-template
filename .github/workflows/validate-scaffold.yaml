@@ -29,8 +29,23 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false # read-only job; never pushes, so don't keep the token
-      - name: 🧱 Build deploy/ manifests
-        # kubectl (with embedded kustomize) is preinstalled on ubuntu-latest. This
-        # mirrors the README's documented local check; it renders the manifests to
-        # catch a broken kustomization without needing a cluster or CRDs.
-        run: kubectl kustomize deploy/
+      - name: 🧱 Build & schema-validate deploy/ manifests
+        # kubectl (with embedded kustomize) is preinstalled on ubuntu-latest. Render
+        # the manifests (catches a broken kustomization without a cluster), then
+        # schema-validate every rendered resource with kubeconform — the
+        # devantler-tech-standard manifest validator (KSail embeds it; the platform's
+        # gitops-repo-audit skill uses it). Standard Kubernetes kinds validate against
+        # the bundled schemas; the CRD-backed resources (ExternalSecret, SecretStore,
+        # CloudNativePG Cluster, Gateway-API HTTPRoute) validate against the datreeio
+        # CRDs-catalog. `-ignore-missing-schemas` skips any kind with no published
+        # schema rather than failing. This catches a typo'd field that `kubectl
+        # kustomize` renders without complaint before it ships to every tenant.
+        env:
+          KUBECONFORM_VERSION: v0.7.0
+        run: |
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | tar -xz kubeconform
+          kubectl kustomize deploy/ | ./kubeconform \
+            -strict -ignore-missing-schemas -summary -verbose \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
