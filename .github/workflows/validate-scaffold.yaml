@@ -75,7 +75,9 @@ jobs:
           # Render first (broken kustomization fails here), then schema-validate.
           kubectl kustomize deploy/ > rendered.yaml
           # Short retry absorbs a transient catalog blip while (re)populating the cache;
-          # a cache hit needs no network and succeeds on the first attempt.
+          # a cache hit needs no network and succeeds on the first attempt. Fold stderr
+          # into the capture (2>&1) so the Skipped:0 assertion below reads kubeconform's
+          # summary regardless of which stream a future version prints it on.
           ok=
           for attempt in 1 2 3; do
             if ./kubeconform \
@@ -83,7 +85,7 @@ jobs:
                 -cache .kubeconform-cache \
                 -schema-location default \
                 -schema-location "https://raw.githubusercontent.com/datreeio/CRDs-catalog/${CRDS_CATALOG_REF}/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
-                rendered.yaml | tee kubeconform.out; then
+                rendered.yaml 2>&1 | tee kubeconform.out; then
               ok=1
               break
             fi
