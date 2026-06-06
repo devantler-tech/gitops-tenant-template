@@ -15,10 +15,19 @@ fill in the scaffolding.
 
 1. Click **"Use this template" → Create a new repository** (or
    `gh repo create devantler-tech/<tenant> --template devantler-tech/gitops-tenant-template --private`).
-2. Replace the scaffolding with your app: application code, `Dockerfile`, the
-   `deploy/` manifests, the `ci.yaml` jobs, and fill in `AGENTS.md`.
-3. Create `.templatesyncignore` (see below).
-4. Register the tenant on the platform — follow
+2. **Rename the placeholders** in `deploy/` to your tenant name — run
+   [`scripts/rename-placeholders.sh`](scripts/rename-placeholders.sh) (defaults to
+   the repo directory name, or pass one: `scripts/rename-placeholders.sh my-tenant`).
+   It rewrites both the `app` and `REPLACE_ME` placeholders consistently —
+   including the container name, which **must** equal the repo name (see the
+   convention below) — without corrupting the `app.kubernetes.io/name` label
+   *keys*, CloudNativePG's literal `-app` secret suffix, or the `openbao`
+   SecretStore name. (Doing this by hand is easy to get half-wrong.) It's a
+   one-shot helper — delete it once adopted.
+3. Replace the rest of the scaffolding with your app: application code,
+   `Dockerfile`, the `ci.yaml` jobs, and fill in `AGENTS.md`.
+4. Create `.templatesyncignore` (see below).
+5. Register the tenant on the platform — follow
    [`platform/docs/TENANTS.md`](https://github.com/devantler-tech/platform/blob/main/docs/TENANTS.md).
 
 ## What the template owns vs. what you own
@@ -54,6 +63,7 @@ Dockerfile
 README.md
 LICENSE
 deploy/
+scripts/rename-placeholders.sh
 .templatesyncignore
 ```
 
