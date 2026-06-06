@@ -1,0 +1,31 @@
+name: 🏷️ Sync Labels
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * 1" # weekly, Monday 07:00 UTC
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  sync-labels:
+    name: Sync Labels
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout
+      issues: write # sync issue labels
+    steps:
+      - name: 🔒 Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - name: 📥 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: 🔄 Sync labels
+        uses: devantler-tech/actions/sync-github-labels@cbfd433920d036c336b00b35af4c82f8e700affe # v5.4.0
