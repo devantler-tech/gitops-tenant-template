@@ -45,7 +45,7 @@ app code.
 | `.github/workflows/cd.yaml` | On a `v*` tag, calls `publish-app.yaml` to build, digest-pin, push, and **cosign-sign** the image + manifests OCI artifact |
 | `.github/workflows/release.yaml` | semantic-release on `main` (cuts the `v*` tags that drive `cd.yaml`) |
 | `.github/workflows/template-sync.yaml` | Opens the weekly template-sync PR |
-| `.github/workflows/validate-scaffold.yaml` | Builds `deploy/` (`kubectl kustomize`) to gate template-repo PRs against a broken scaffold; **no-ops in tenants** (you validate your own `deploy/` via `ci.yaml`) |
+| `.github/workflows/validate-scaffold.yaml` | Renders `deploy/` (`kubectl kustomize`) **and schema-validates** every rendered resource with `kubeconform` (`-strict`, built-in schemas + a pinned CRD catalog) to gate template-repo PRs against a broken *or schema-invalid* scaffold; **no-ops in tenants** (you validate your own `deploy/` via `ci.yaml`) |
 | `CLAUDE.md` | `@AGENTS.md` shim |
 | `zizmor.yml` | GitHub Actions pinning policy enforced by the security scan |
 
