@@ -46,8 +46,10 @@ app code.
 | `.github/workflows/release.yaml` | semantic-release on `main` (cuts the `v*` tags that drive `cd.yaml`) |
 | `.github/workflows/template-sync.yaml` | Opens the weekly template-sync PR |
 | `.github/workflows/validate-scaffold.yaml` | Renders `deploy/` (`kubectl kustomize`) **and schema-validates** every rendered resource with `kubeconform` (`-strict`, built-in schemas + a pinned CRD catalog) to gate template-repo PRs against a broken *or schema-invalid* scaffold; **no-ops in tenants** (you validate your own `deploy/` via `ci.yaml`) |
+| `.github/workflows/sync-labels.yaml` | Syncs the repo's issue/PR labels from the canonical label set |
 | `CLAUDE.md` | `@AGENTS.md` shim |
 | `zizmor.yml` | GitHub Actions pinning policy enforced by the security scan |
+| `scripts/rename-placeholders.sh` | One-shot rename of the placeholder app to your tenant name |
 
 **Yours (list these in `.templatesyncignore`):**
 
@@ -63,7 +65,6 @@ Dockerfile
 README.md
 LICENSE
 deploy/
-scripts/rename-placeholders.sh
 .templatesyncignore
 ```
 
