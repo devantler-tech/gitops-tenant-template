@@ -14,6 +14,15 @@ spec:
       labels:
         app.kubernetes.io/name: app
     spec:
+      # Pod-level PodSecurity "restricted" baseline. Set explicitly (not left
+      # to a mutating webhook) so the tenant is admissible day-one on any
+      # restricted cluster — including the platform, whose Kyverno
+      # `require-seccomp-profile` rule demands the seccompProfile at the POD
+      # level, not only on the container.
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       imagePullSecrets:
         - name: ghcr-auth
       containers:
