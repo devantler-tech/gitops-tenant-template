@@ -1,0 +1,63 @@
+# CiliumNetworkPolicy that re-opens the paths this tenant needs.
+#
+# The platform's `add-default-deny` Kyverno policy generates a deny-all
+# CiliumNetworkPolicy in EVERY tenant namespace (ingress + egress denied; only a
+# companion allow-dns policy is auto-generated). A tenant that ships no allow
+# policy is therefore unreachable from the platform Gateway and cannot reach its
+# own database — so the scaffold ships one day-one. Trim the rules you don't use
+# (e.g. drop the CloudNativePG/intra-namespace rules if you deleted cluster.yaml).
+#
+# An empty endpoint selector (`{}`) in a fromEndpoints/toEndpoints rule of a
+# namespaced CiliumNetworkPolicy selects pods in THIS tenant's own namespace, so
+# the intra-namespace rules stay placeholder-free (no namespace to rename).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: app
+  labels:
+    app.kubernetes.io/name: app
+spec:
+  endpointSelector: {}
+  ingress:
+    # Platform Gateway → app HTTP (the Gateway routes here via httproute.yaml).
+    # Match the container port in deployment.yaml if you change it from 3000.
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
+    # Intra-namespace: app ⇄ CloudNativePG database (and CNPG replication).
+    # Delete this rule if your tenant has no database (cluster.yaml removed).
+    - fromEndpoints:
+        - {}
+    # CNPG operator reaches the instance status (8000) and PostgreSQL (5432).
+    # Delete this rule if your tenant has no database.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: cnpg-system
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+            - port: "5432"
+              protocol: TCP
+  egress:
+    # Intra-namespace: app → database. Delete this rule if your tenant has no DB.
+    - toEndpoints:
+        - {}
+    # Kube API — the CNPG operator manages the Cluster. Delete if no database.
+    - toEntities:
+        - kube-apiserver
+    # DNS resolution (kube-dns). The platform also auto-generates an allow-dns
+    # policy; keeping this rule makes the tenant's policy self-contained.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP

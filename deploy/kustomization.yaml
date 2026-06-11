@@ -4,6 +4,7 @@ resources:
   - deployment.yaml
   - httproute.yaml
   - service.yaml
+  - networkpolicy.yaml # re-opens Gateway ingress + DB/DNS egress under the platform's default-deny
   - cluster.yaml # CloudNativePG database — delete this line if your tenant has no DB
   # OpenBao-backed secrets via External Secrets — delete both if you need none:
   - secretstore.yaml
