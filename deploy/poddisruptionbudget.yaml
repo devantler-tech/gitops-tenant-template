@@ -1,0 +1,20 @@
+# A drain-safe PodDisruptionBudget so node drains (autoscaler recycles, rolling
+# reboots) never deadlock on this tenant's pods.
+#
+# `maxUnavailable: 1` is the platform's universal PDB convention (platform#1882):
+# it is drain-safe at EVERY replica count — at 1 replica the single pod can still
+# be evicted (no deadlock), and at 2+ replicas it gives rolling, one-pod-at-a-time
+# protection. A `minAvailable: 1` PDB over a single replica would instead permit
+# ZERO voluntary evictions and wedge every drain, so always prefer maxUnavailable
+# here regardless of how many replicas you settle on.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: app
+  labels:
+    app.kubernetes.io/name: app
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: app

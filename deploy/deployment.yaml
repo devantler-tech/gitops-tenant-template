@@ -4,6 +4,15 @@ metadata:
   name: app
   labels:
     app.kubernetes.io/name: app
+    # The platform's `validate-replica-floor` Kyverno policy (Audit) flags any
+    # Deployment/StatefulSet under 3 replicas — the HA floor that makes the
+    # drain-safe `maxUnavailable: 1` PDB (poddisruptionbudget.yaml) actually
+    # preserve availability through a node drain (see platform#1882). The scaffold
+    # ships a single replica (a fresh tenant starts small), so it opts out
+    # explicitly with this label to stay clean in the platform's PolicyReports
+    # day-one. When you want HA, raise `replicas` to >= 3 and DELETE this label so
+    # the floor protects you again.
+    platform.devantler.tech/replica-floor: exempt
 spec:
   replicas: 1
   selector:
