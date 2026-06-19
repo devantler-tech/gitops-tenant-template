@@ -18,6 +18,7 @@
 AGENTS.md
 README.md
 LICENSE
+.github/CODEOWNERS
 .claude/skills/maintain/SKILL.md
 
 # --- CI / release / dependency config the tenant tailors to its stack ---
