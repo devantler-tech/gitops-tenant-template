@@ -79,3 +79,21 @@ spec:
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 10
+          volumeMounts:
+            # `readOnlyRootFilesystem: true` (above) makes the whole container
+            # root filesystem read-only, so the app cannot write anywhere unless
+            # you mount a writable volume. Almost every runtime still needs a
+            # writable `/tmp` (framework caches, upload/render buffers, unix
+            # sockets), so the scaffold ships one — otherwise a fresh tenant is
+            # admitted day-one but CrashLoops the moment the app touches disk.
+            # Add a mount per extra writable path your app needs (e.g. a cache
+            # dir); remove this if your app writes nothing to the filesystem.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # Ephemeral scratch backing the writable `/tmp` mount above. `sizeLimit`
+        # caps it so a runaway write is evicted rather than exhausting the node's
+        # ephemeral storage; raise it if your workload buffers larger files.
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
