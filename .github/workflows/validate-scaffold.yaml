@@ -9,10 +9,18 @@ permissions: {}
 # Template-repo-only scaffold-integrity gate. The deploy/ Kustomize manifests are
 # this template's core deliverable — every new tenant inherits them — so a PR that
 # breaks the kustomization (a renamed/removed resource, a YAML error) must not
-# merge green and ship broken manifests downstream. This job runs ONLY in the
-# template repo; it no-ops in tenants created from it (the guard below is false
-# there), mirroring how cd.yaml/release.yaml run only in tenants. Tenants replace
-# deploy/ with their own app and validate it via their own ci.yaml.
+# merge green and ship broken manifests downstream. Two layers run here:
+#   1. schema-validate the deploy/ manifests (a typo'd CRD field that renders
+#      without complaint must fail loudly), and
+#   2. exercise scripts/rename-placeholders.sh — the onboarding script every new
+#      tenant runs first; a botched sed address (a missed file, a corrupted label
+#      KEY, a double-renamed CNPG `-app` suffix) would otherwise ship broken to
+#      every tenant while the manifest validation above — which only ever sees the
+#      UNrenamed scaffold — stays green.
+# This job runs ONLY in the template repo; it no-ops in tenants created from it
+# (the guard below is false there), mirroring how cd.yaml/release.yaml run only in
+# tenants. Tenants replace deploy/ with their own app and validate it via their
+# own ci.yaml.
 jobs:
   validate-scaffold:
     name: Validate Scaffold
@@ -100,3 +108,10 @@ jobs:
             echo "::error::a resource was skipped — its CRD schema did not resolve; pin a catalog ref that carries it or fix the kind"
             exit 1
           }
+      - name: 🧱 Validate onboarding (rename-placeholders.sh)
+        # Run the onboarding script end-to-end against a throwaway copy and assert
+        # the rename is correct (the build step above only ever sees the UNrenamed
+        # scaffold, so this is the only thing that catches a botched rename before
+        # it ships to every tenant). kubectl is preinstalled, so the test's
+        # post-rename `kubectl kustomize` build assertion runs here too.
+        run: sh scripts/rename-placeholders.test.sh
