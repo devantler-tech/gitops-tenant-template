@@ -57,6 +57,7 @@ app code.
 # Files this tenant owns — template-sync must never overwrite them.
 AGENTS.md
 .claude/skills/maintain/SKILL.md
+.github/CODEOWNERS
 .github/workflows/ci.yaml
 .github/dependabot.yml
 .releaserc
@@ -70,7 +71,8 @@ deploy/
 
 `AGENTS.md` and the `maintain` skill ship as scaffolding (a starting point for new
 tenants) but are **yours** — they carry your project-specific overview, so they are
-ignored from sync.
+ignored from sync. `.github/CODEOWNERS` is likewise yours: it names *your* tenant's
+code owners, so template-sync never overwrites it.
 
 ## How publishing works
 
