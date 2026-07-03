@@ -52,7 +52,7 @@ jobs:
         # pinned ref. A cache hit makes the validate step network-free (no fetch at
         # all), so a raw.githubusercontent.com blip can't flake the gate in steady
         # state; only a cold cache or a ref bump re-fetches.
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .kubeconform-cache
           key: kubeconform-crds-${{ env.CRDS_CATALOG_REF }}
