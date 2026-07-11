@@ -58,6 +58,16 @@ done
 [ "$(cat "$deploy"/*.yaml)" = "$snapshot_before" ] ||
 	fail "a rejected invocation modified deploy/ — guardrails must bail out first"
 
+# Add unrelated YAML fields that use the same literal values. The onboarding
+# helper must only rename the SecretStore tenant identity, not every role/name
+# key it happens to encounter in deploy/.
+scope_fixture="$deploy/rename-scope-fixture.yaml"
+printf '%s\n' \
+	'example:' \
+	'  role: "replace-me"' \
+	'  name: "replace-me"' > "$scope_fixture"
+scope_before="$(cat "$scope_fixture")"
+
 # --- Happy path ---------------------------------------------------------------
 "$script" "$NAME" >/dev/null
 
@@ -103,12 +113,25 @@ printf '%s\n' "$all" | grep -qF "name: openbao" ||
 
 # 6) The lowercase `replace-me` Vault role / ServiceAccount placeholders are
 #    repointed to the tenant name too; no tenant-identity placeholder survives.
-grep -qF "role: \"${NAME}\"" "$deploy/secretstore.yaml" ||
+grep -qE "^[[:space:]]*role: \"${NAME}\"$" "$deploy/secretstore.yaml" ||
 	fail "SecretStore Vault role not renamed to ${NAME}"
-grep -qF "name: \"${NAME}\"" "$deploy/secretstore.yaml" ||
-	fail "SecretStore ServiceAccount reference not renamed to ${NAME}"
-printf '%s\n' "$all" | grep -qF "replace-me" &&
+if ! awk -v expected="name: \"${NAME}\"" '
+	/^[[:space:]]*serviceAccountRef:[[:space:]]*$/ { in_ref = 1; next }
+	in_ref && /^[[:space:]]*name:[[:space:]]*/ {
+		line = $0
+		sub(/^[[:space:]]*/, "", line)
+		found = 1
+		if (line != expected) exit 1
+		exit 0
+	}
+	END { if (!found) exit 1 }
+' "$deploy/secretstore.yaml"; then
+	fail "SecretStore ServiceAccount reference not exactly ${NAME}"
+fi
+grep -qF "replace-me" "$deploy/secretstore.yaml" &&
 	fail "a lowercase 'replace-me' tenant-identity placeholder survived the rename"
+[ "$(cat "$scope_fixture")" = "$scope_before" ] ||
+	fail "rename touched unrelated role/name fields"
 
 # 7) No stray temp files left behind by the in-place sed.
 if git status --porcelain --untracked-files=all | grep -q '\.rename\.'; then

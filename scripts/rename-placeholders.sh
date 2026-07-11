@@ -48,8 +48,8 @@ for f in "$deploy_dir"/*.yaml; do
   # so neither the label key nor prose/comments are touched.
   sed \
     -e "s/REPLACE_ME/$name/g" \
-    -e "s/role: \"replace-me\"$/role: \"$name\"/" \
-    -e "s/name: \"replace-me\"$/name: \"$name\"/" \
+    -e "/^[[:space:]]*kubernetes:[[:space:]]*$/,/^[[:space:]]*serviceAccountRef:[[:space:]]*$/s/^\([[:space:]]*role:[[:space:]]*\)\"replace-me\"$/\1\"$name\"/" \
+    -e "/^[[:space:]]*serviceAccountRef:[[:space:]]*$/,/^[[:space:]]*name:[[:space:]]*/s/^\([[:space:]]*name:[[:space:]]*\)\"replace-me\"$/\1\"$name\"/" \
     -e "s/: app-db-app\$/: $name-db-app/" \
     -e "s/: app-db\$/: $name-db/" \
     -e "s/: app-secrets\$/: $name-secrets/" \
