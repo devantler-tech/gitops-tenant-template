@@ -35,11 +35,13 @@ fail() {
 	exit 1
 }
 
-# Build a throwaway copy of the working tree and make it its own git repo, so the
-# script's `git rev-parse --show-toplevel` resolves to THIS copy (not the real
-# repo it may be invoked from) — otherwise the script would rename the live tree.
+# Build a throwaway copy of the working tree so the real tree is never mutated
+# (the script now targets the scaffold owning it, i.e. this copy). The copy is
+# its own git repo so check 7's `git status` works.
 work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
+other="$(mktemp -d)"
+caller_repo="$(mktemp -d)"
+trap 'rm -rf "$work" "$other" "$caller_repo"' EXIT
 cp -R "$repo_root"/. "$work"/
 rm -rf "$work/.git"
 cd "$work"
@@ -143,7 +145,23 @@ fi
 [ "$(cat "$deploy"/*.yaml)" = "$all" ] ||
 	fail "a second rename mutated deploy/ — the script is not idempotent"
 
-# 9) The renamed scaffold still builds (CI has kubectl preinstalled; skip locally
+# 9) Cross-checkout invocation (#61): a path-qualified call from an UNRELATED
+#    git checkout must rename only the scaffold owning the script, and leave the
+#    caller's working tree — including its own deploy/ with the same
+#    placeholders — byte-for-byte untouched.
+cp -R "$repo_root"/. "$other"/
+rm -rf "$other/.git"
+git init -q "$other"
+git init -q "$caller_repo"
+cp -R "$repo_root/deploy" "$caller_repo/deploy"
+caller_before="$(cat "$caller_repo"/deploy/*.yaml)"
+(cd "$caller_repo" && "$other/scripts/rename-placeholders.sh" cross-tenant >/dev/null)
+[ "$(cat "$caller_repo"/deploy/*.yaml)" = "$caller_before" ] ||
+	fail "cross-checkout invocation mutated the CALLER's deploy/ (#61)"
+cat "$other"/deploy/*.yaml | grep -qF "cross-tenant.platform.lan" ||
+	fail "cross-checkout invocation did not rename the scaffold owning the script (#61)"
+
+# 10) The renamed scaffold still builds (CI has kubectl preinstalled; skip locally
 #    if it is absent so the text assertions above stay runnable everywhere).
 if command -v kubectl >/dev/null 2>&1; then
 	kubectl kustomize "$deploy" >/dev/null ||
@@ -152,4 +170,4 @@ else
 	echo "note: kubectl not found — skipping the kustomize-build assertion (CI enforces it)"
 fi
 
-echo "PASS: rename-placeholders.sh end-to-end (guardrails + placeholder/app rename + label-key/CNPG-suffix/openbao invariants + idempotency + build)"
+echo "PASS: rename-placeholders.sh end-to-end (guardrails + placeholder/app rename + label-key/CNPG-suffix/openbao invariants + idempotency + cross-checkout targeting + build)"

@@ -19,10 +19,17 @@
 #   • the shared `openbao` SecretStore name.
 #
 # Usage:  scripts/rename-placeholders.sh [tenant-name]
-# With no argument it defaults to the repository directory name.
+# With no argument it defaults to the scaffold's directory name.
 set -eu
 
-repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+# Resolve the scaffold that OWNS this script — never the caller's checkout. The
+# helper may be invoked by path from another repository (or any directory), and
+# a cwd-derived root (git rev-parse --show-toplevel) would rewrite THAT tree's
+# deploy/ instead of this one's (#61). `cd -P` pins directory symlinks to their
+# physical path; a symlink to the script itself intentionally resolves relative
+# to the symlink's own directory (POSIX sh has no portable readlink).
+script_dir="$(CDPATH='' cd -P -- "$(dirname -- "$0")" && pwd)"
+repo_root="$(dirname -- "$script_dir")"
 name="${1:-$(basename "$repo_root")}"
 
 # k8s resource names and the container name must be a DNS-1123 label.
@@ -35,7 +42,7 @@ fi
 
 deploy_dir="$repo_root/deploy"
 [ -d "$deploy_dir" ] || {
-  echo "error: $deploy_dir not found — run this from the tenant repository root." >&2
+  echo "error: $deploy_dir not found — the scaffold owning this script has no deploy/ directory." >&2
   exit 1
 }
 
