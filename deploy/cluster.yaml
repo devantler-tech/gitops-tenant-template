@@ -10,6 +10,13 @@ metadata:
     app.kubernetes.io/name: app
 spec:
   instances: 1
+  # CNPG auto-creates a `minAvailable` PodDisruptionBudget for the cluster,
+  # which at a single instance deadlocks node drains (the one pod can never be
+  # evicted). Single-instance clusters are made drain-safe by disabling that
+  # PDB — the platform's `validate-pdb-drain-safe` policy documents exactly
+  # this remedy. When you scale to `instances: 2` or more for HA, REMOVE this
+  # field so the operator's PDB protects the primary again.
+  enablePDB: false
   storage:
     size: 1Gi
   bootstrap:
