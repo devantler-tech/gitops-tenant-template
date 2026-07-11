@@ -18,12 +18,13 @@ fill in the scaffolding.
 2. **Rename the placeholders** in `deploy/` to your tenant name — run
    [`scripts/rename-placeholders.sh`](scripts/rename-placeholders.sh) (defaults to
    the repo directory name, or pass one: `scripts/rename-placeholders.sh my-tenant`).
-   It rewrites both the `app` and `REPLACE_ME` placeholders consistently —
-   including the container name, which **must** equal the repo name (see the
-   convention below) — without corrupting the `app.kubernetes.io/name` label
-   *keys*, CloudNativePG's literal `-app` secret suffix, or the `openbao`
-   SecretStore name. (Doing this by hand is easy to get half-wrong.) It's a
-   one-shot helper — delete it once adopted.
+   It rewrites the `app`, `REPLACE_ME`, and `replace-me` placeholders
+   consistently, including the container name, Vault role, and ServiceAccount.
+   Those values **must** equal the repo name (see the convention below). The
+   helper preserves the `app.kubernetes.io/name` label *keys*, CloudNativePG's
+   literal `-app` secret suffix, and the `openbao` SecretStore name. (Doing this
+   by hand is easy to get half-wrong.) It's a one-shot helper — delete it once
+   adopted.
 3. Replace the rest of the scaffolding with your app: application code,
    `Dockerfile`, the `ci.yaml` jobs, and fill in `AGENTS.md`.
 4. Create `.templatesyncignore` (see below).

@@ -1,18 +1,19 @@
 #!/usr/bin/env sh
 # rename-placeholders.sh — turn this scaffold into a real tenant in one shot.
 #
-# The deploy/ manifests ship with two placeholders that both collapse to a single
+# The deploy/ manifests ship with three placeholder forms that collapse to one
 # value — your tenant (repository) name:
 #   • `app`       — the example app/resource name (Deployment, Service, the
 #                   `app.kubernetes.io/name` label *value*, HTTPRoute, the CNPG
 #                   Cluster, its database/owner, and the example hostname).
-#   • REPLACE_ME  — values that MUST equal your repo name: the container image,
-#                   the tenant's Vault role + ServiceAccount, and the OpenBao path.
+#   • REPLACE_ME  — the container image and OpenBao path.
+#   • replace-me  — the tenant's Vault role and ServiceAccount.
 # (Per the template convention the Deployment container `name` MUST equal the
 # repository name — see README — so a single name drives everything.)
 #
-# Doing this by hand is easy to get half-wrong; this script renames both across
-# deploy/*.yaml in place WITHOUT corrupting the parts that must NOT change:
+# Doing this by hand is easy to get half-wrong; this script renames all three
+# across deploy/*.yaml in place WITHOUT corrupting the parts that must NOT
+# change:
 #   • the `app.kubernetes.io/name` label *key* (only its value is renamed),
 #   • CloudNativePG's literal `-app` suffix on its generated secret, and
 #   • the shared `openbao` SecretStore name.
@@ -47,6 +48,8 @@ for f in "$deploy_dir"/*.yaml; do
   # so neither the label key nor prose/comments are touched.
   sed \
     -e "s/REPLACE_ME/$name/g" \
+    -e "s/role: \"replace-me\"$/role: \"$name\"/" \
+    -e "s/name: \"replace-me\"$/name: \"$name\"/" \
     -e "s/: app-db-app\$/: $name-db-app/" \
     -e "s/: app-db\$/: $name-db/" \
     -e "s/: app-secrets\$/: $name-secrets/" \

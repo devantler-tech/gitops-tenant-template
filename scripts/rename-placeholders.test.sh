@@ -2,10 +2,10 @@
 # rename-placeholders.test.sh — exercise scripts/rename-placeholders.sh end-to-end.
 #
 # rename-placeholders.sh is the first thing a newcomer runs after `Use this
-# template` — it rewrites the `app` / REPLACE_ME placeholders across deploy/*.yaml
-# into the tenant's real name. A silent regression in it ships broken manifests
-# to every tenant created from this scaffold, and it had no other coverage: the
-# existing `validate-scaffold.yaml` gate schema-validates the *unrenamed*
+# template` — it rewrites the `app`, REPLACE_ME, and `replace-me` placeholders
+# across deploy/*.yaml into the tenant's real name. A silent regression ships
+# broken manifests to every tenant created from this scaffold, and it had no
+# other coverage. The existing validation gate schema-validates the *unrenamed*
 # manifests but never runs the rename, so a botched sed address would pass green.
 # This test pins the script's real, subtle behaviour:
 #   * REPLACE_ME values (the image and the OpenBao KV path) are repointed,
@@ -16,9 +16,7 @@
 #     becomes `<name>-db-app`, NOT `<name>-db-<name>`),
 #   * the shared `openbao` SecretStore name is NOT renamed,
 #   * the lowercase `replace-me` Vault role / ServiceAccount placeholders are
-#     deliberately LEFT for manual edit (per secretstore.yaml's own comments —
-#     they must match the platform-side registration), so the script must not
-#     touch them,
+#     repointed to the tenant name alongside the uppercase placeholders,
 #   * invalid (non-DNS-1123) names are rejected without mutating anything,
 #   * no stray sed temp files are left behind, and
 #   * the renamed scaffold still `kubectl kustomize`-builds (CI only).
@@ -104,9 +102,13 @@ printf '%s\n' "$all" | grep -qF "name: openbao" ||
 	fail "the shared 'openbao' SecretStore name must be preserved"
 
 # 6) The lowercase `replace-me` Vault role / ServiceAccount placeholders are
-#    deliberately left for manual edit (distinct from uppercase REPLACE_ME).
-printf '%s\n' "$all" | grep -qF "replace-me" ||
-	fail "lowercase 'replace-me' Vault role/SA placeholders must be left intact"
+#    repointed to the tenant name too; no tenant-identity placeholder survives.
+grep -qF "role: \"${NAME}\"" "$deploy/secretstore.yaml" ||
+	fail "SecretStore Vault role not renamed to ${NAME}"
+grep -qF "name: \"${NAME}\"" "$deploy/secretstore.yaml" ||
+	fail "SecretStore ServiceAccount reference not renamed to ${NAME}"
+printf '%s\n' "$all" | grep -qF "replace-me" &&
+	fail "a lowercase 'replace-me' tenant-identity placeholder survived the rename"
 
 # 7) No stray temp files left behind by the in-place sed.
 if git status --porcelain --untracked-files=all | grep -q '\.rename\.'; then
@@ -127,4 +129,4 @@ else
 	echo "note: kubectl not found — skipping the kustomize-build assertion (CI enforces it)"
 fi
 
-echo "PASS: rename-placeholders.sh end-to-end (guardrails + REPLACE_ME/app rename + label-key/CNPG-suffix/openbao/replace-me invariants + idempotency + build)"
+echo "PASS: rename-placeholders.sh end-to-end (guardrails + placeholder/app rename + label-key/CNPG-suffix/openbao invariants + idempotency + build)"
