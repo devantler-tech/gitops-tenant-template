@@ -43,6 +43,15 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
+        # fsGroup makes mounted volumes group-owned by 1000 so a non-root app can
+        # read/write them; OnRootMismatch skips a full recursive chown when the top
+        # dir already has the right group (cheap restart on large volumes). Set
+        # explicitly to complete the self-describing posture above — the platform's
+        # Kyverno `add-security-context` mutation would otherwise inject exactly
+        # these (kubescape C-0211), so declaring them keeps the scaffold in lockstep
+        # and mutation-independent.
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       # The app never talks to the Kubernetes API, so don't mount an API token
