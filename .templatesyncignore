@@ -1,7 +1,7 @@
 # .templatesyncignore — files an INSTANCE (tenant) created from this template OWNS.
 #
 # Same syntax as .gitignore. The weekly template-sync workflow
-# (devantler-tech/reusable-workflows .github/workflows/template-sync.yaml, using
+# (devantler-tech/actions .github/workflows/template-sync.yaml, using
 # AndreasAugustin/actions-template-sync) is skipped in this template repo itself
 # and runs in every tenant created from it — opening a PR that brings template
 # changes downstream. It only ever touches files that exist in this template, and
@@ -11,8 +11,8 @@
 # Everything NOT listed here is TEMPLATE-OWNED shared plumbing kept current in
 # every tenant by template-sync — change those upstream in
 # devantler-tech/gitops-tenant-template, never by editing them in a tenant.
-# Template-owned files: .github/workflows/{cd,release,template-sync,validate-scaffold,sync-labels}.yaml,
-# CLAUDE.md, zizmor.yml, scripts/rename-placeholders.sh.
+# Template-owned files: .github/workflows/{cd,release,template-sync,sync-labels}.yaml,
+# CLAUDE.md, zizmor.yml.
 
 # --- Identity & docs (tenant-specific) ---
 AGENTS.md
@@ -33,6 +33,16 @@ LICENSE
 # directory is tenant-owned. The Dockerfile is the placeholder app build to swap out.
 deploy/
 Dockerfile
+
+# --- Scaffolding machinery (template-only; dead code in a live tenant) ---
+# These exist to rename placeholders when a NEW repo is created from this
+# template ("use this template" copies everything, so scaffolding still arrives
+# at creation time). A scaffolded tenant never runs them again — ignoring them
+# stops template-sync (re-)introducing them downstream, so a tenant that still
+# carries them can delete them and they stay gone.
+scripts/rename-placeholders.sh
+scripts/rename-placeholders.test.sh
+.github/workflows/validate-scaffold.yaml
 
 # --- This ignore-list itself (the tenant curates its own ownership) ---
 .templatesyncignore
