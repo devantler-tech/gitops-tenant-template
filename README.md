@@ -46,11 +46,17 @@ app code.
 | `.github/workflows/cd.yaml` | On a `v*` tag, calls `publish-app.yaml` to build, digest-pin, push, and **cosign-sign** the image + manifests OCI artifact |
 | `.github/workflows/release.yaml` | semantic-release on `main` (cuts the `v*` tags that drive `cd.yaml`) |
 | `.github/workflows/template-sync.yaml` | Opens the weekly template-sync PR |
-| `.github/workflows/validate-scaffold.yaml` | Renders `deploy/` (`kubectl kustomize`) **and schema-validates** every rendered resource with `kubeconform` (`-strict`, built-in schemas + a pinned CRD catalog) to gate template-repo PRs against a broken *or schema-invalid* scaffold; **no-ops in tenants** (you validate your own `deploy/` via `ci.yaml`) |
 | `.github/workflows/sync-labels.yaml` | Syncs the repo's issue/PR labels from the canonical label set |
 | `CLAUDE.md` | `@AGENTS.md` shim |
 | `zizmor.yml` | GitHub Actions pinning policy enforced by the security scan |
-| `scripts/rename-placeholders.sh` | One-shot rename of the placeholder app to your tenant name |
+
+**Scaffold-time only (arrives when the repo is created — never re-synced, so a
+tenant still carrying these from an older sync can delete them for good):**
+
+| File | Purpose |
+|---|---|
+| `.github/workflows/validate-scaffold.yaml` | Renders `deploy/` (`kubectl kustomize`) **and schema-validates** every rendered resource with `kubeconform` (`-strict`, built-in schemas + a pinned CRD catalog) to gate template-repo PRs against a broken *or schema-invalid* scaffold; no-ops in tenants |
+| `scripts/rename-placeholders.sh` (+ its test) | One-shot rename of the placeholder app to your tenant name |
 
 **Yours (list these in `.templatesyncignore`):**
 
@@ -68,6 +74,12 @@ README.md
 LICENSE
 deploy/
 .templatesyncignore
+
+# Template scaffolding — dead code in a live tenant; keep ignored so a
+# template-sync never re-introduces it after you delete it.
+scripts/rename-placeholders.sh
+scripts/rename-placeholders.test.sh
+.github/workflows/validate-scaffold.yaml
 ```
 
 `AGENTS.md` and the `maintain` skill ship as scaffolding (a starting point for new
