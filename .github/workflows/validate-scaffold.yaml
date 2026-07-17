@@ -115,3 +115,102 @@ jobs:
         # it ships to every tenant). kubectl is preinstalled, so the test's
         # post-rename `kubectl kustomize` build assertion runs here too.
         run: sh scripts/rename-placeholders.test.sh
+
+  # Platform admissibility gate (#71, epic #6 theme 4): the scaffold's promise is
+  # "admissible on day one", so apply the platform's LIVE Kyverno admission policy
+  # set (plus the shared kyverno-policies set) to the rendered scaffold and fail on
+  # Enforce-mode violations. The policy checkouts are deliberately UNPINNED (main):
+  # this gate exists to track the live admission truth — drift IS the signal — the
+  # mirror of the schema job's pinned-catalog rationale, where determinism wins.
+  # Scope notes: PodSecurity (namespace-label PSA) is not checkable offline and is
+  # out of scope here; only `ClusterPolicy` resources are applied (a future CEL
+  # ValidatingPolicy in either source needs adding explicitly); generate rules and
+  # mutate-existing rules are filtered out — they act on cluster state, require a
+  # live client, and never reject an applied manifest.
+  admissibility:
+    name: Platform Admissibility
+    if: github.repository == 'devantler-tech/gitops-tenant-template'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkouts
+    env:
+      KYVERNO_CLI_VERSION: v1.18.2
+      KYVERNO_CLI_SHA256: cb2feb8356149fd2fe774c894ccf0969f4a60a83867dd913af724f74ffbbc18b
+    steps:
+      - name: 🔒 Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - name: 📥 Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: 📥 Checkout platform policies (live main — drift is the signal)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: devantler-tech/platform
+          path: .platform
+          sparse-checkout: k8s/bases/infrastructure/cluster-policies
+          persist-credentials: false
+      - name: 📥 Checkout shared kyverno-policies (live main)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: devantler-tech/kyverno-policies
+          path: .shared-policies
+          persist-credentials: false
+      - name: 🛂 Apply admission policies to the rendered scaffold
+        run: |
+          set -euo pipefail
+          # Download + checksum-verify the kyverno CLI (supply-chain integrity).
+          curl -fsSL --retry 3 --retry-all-errors -o kyverno.tar.gz \
+            "https://github.com/kyverno/kyverno/releases/download/${KYVERNO_CLI_VERSION}/kyverno-cli_${KYVERNO_CLI_VERSION}_linux_x86_64.tar.gz"
+          echo "${KYVERNO_CLI_SHA256}  kyverno.tar.gz" | sha256sum -c -
+          tar -xzf kyverno.tar.gz kyverno
+
+          kubectl kustomize deploy/ > rendered.yaml
+
+          # Keep only ClusterPolicies, and only their admission-relevant rules
+          # (drop generate + mutate-existing rules; see the job comment). Plain
+          # mutate rules are KEPT deliberately: the CLI applies them before
+          # validating, mirroring the cluster's mutate-then-validate admission
+          # order — validating the raw scaffold instead would false-fail rules
+          # that an admission mutation satisfies.
+          filter_admission_rules() {
+            yq eval-all '
+              select(.kind == "ClusterPolicy")
+              | .spec.rules |= map(select(
+                  (has("generate") or (has("mutate") and (.mutate | has("targets")))) | not
+                ))
+              | select((.spec.rules | length) > 0)
+            ' "$1"
+          }
+
+          # check_set <name> <kustomize-dir> <require_pass>
+          # require_pass=true adds the fail-open guard: at least one rule must
+          # actually PASS a resource, proving the gate evaluated something (a
+          # broken render/filter otherwise passes green while validating nothing).
+          # The shared set legitimately matches nothing today (its policies
+          # target HelmReleases), so the guard applies to the platform set only.
+          check_set() {
+            name=$1 dir=$2 require_pass=$3
+            kubectl kustomize "$dir" > "${name}-policies.yaml"
+            filter_admission_rules "${name}-policies.yaml" > "${name}-admission.yaml"
+            if ! grep -q '^kind: ClusterPolicy' "${name}-admission.yaml"; then
+              echo "::notice::${name}: no admission-relevant ClusterPolicies to apply"
+              return 0
+            fi
+            # --audit-warn: Audit-mode policies warn (they don't block admission);
+            # --warn-exit-code 0 activates exit-1-on-failure/error while keeping
+            # warnings non-fatal — verified against kyverno CLI v1.18.2.
+            ./kyverno apply "${name}-admission.yaml" --resource rendered.yaml \
+              --audit-warn --warn-exit-code 0 2>&1 | tee "${name}-apply.out"
+            if [ "${require_pass}" = "true" ]; then
+              grep -Eq 'pass: [1-9]' "${name}-apply.out" || {
+                echo "::error::${name}: no rule passed any resource — the gate evaluated nothing; fix the render/filter rather than trusting a vacuous green"
+                return 1
+              }
+            fi
+          }
+
+          check_set platform .platform/k8s/bases/infrastructure/cluster-policies true
+          check_set shared .shared-policies false
