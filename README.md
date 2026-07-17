@@ -91,7 +91,7 @@ code owners, so template-sync never overwrites it.
 
 `release.yaml` turns Conventional-Commit merges to `main` into `vX.Y.Z` tags.
 Each tag triggers `cd.yaml`, which calls the platform's
-[`publish-app.yaml`](https://github.com/devantler-tech/reusable-workflows/blob/main/.github/workflows/publish-app.yaml)
+[`publish-app.yaml`](https://github.com/devantler-tech/actions/blob/main/.github/workflows/publish-app.yaml)
 reusable workflow to build the image, **pin its digest into
 `deploy/deployment.yaml`**, push the manifests as an OCI artifact, and
 **cosign-sign** both. The platform's `OCIRepository` verifies that signature, so
