@@ -40,7 +40,7 @@ jobs:
       CRDS_CATALOG_REF: 1f22207301c45da9ee687f6bbf728da049e6c105
     steps:
       - name: 🔒 Harden runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
       - name: 📥 Checkout
@@ -138,7 +138,7 @@ jobs:
       KYVERNO_CLI_SHA256: cb2feb8356149fd2fe774c894ccf0969f4a60a83867dd913af724f74ffbbc18b
     steps:
       - name: 🔒 Harden runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
       - name: 📥 Checkout
