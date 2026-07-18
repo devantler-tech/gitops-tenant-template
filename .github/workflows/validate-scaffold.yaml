@@ -3,6 +3,12 @@ name: 🧱 Validate Scaffold
 on:
   pull_request:
     branches: [main]
+  # The admissibility job consumes live policy mains, so it must keep checking
+  # even while this template has no unrelated pull-request activity. GitHub runs
+  # scheduled workflows from the latest default-branch commit.
+  schedule:
+    - cron: "17 6 * * 1"  # weekly, Monday 06:17 UTC
+  workflow_dispatch:
 
 permissions: {}
 
@@ -47,6 +53,80 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false # read-only job; never pushes, so don't keep the token
+      - name: 🧪 Validate drift-gate contract
+        id: validate-drift-gate-contract
+        run: |
+          set -eu
+          workflow=.github/workflows/validate-scaffold.yaml
+          expected_if=$(
+            printf '%s' \
+              "github.repository == 'devantler-tech/gitops-tenant-template'"
+          )
+          export expected_if
+          assert_yaml() {
+            description=$1
+            expression=$2
+            if ! yq eval -e "${expression}" "${workflow}" >/dev/null; then
+              echo "::error::drift-gate contract: ${description}"
+              exit 1
+            fi
+          }
+
+          assert_yaml "pull requests to main must stay covered" \
+            '.["on"].pull_request.branches | (length == 1 and .[0] == "main")'
+          assert_yaml "the live-policy drift gate must run weekly" \
+            '.["on"].schedule | (length == 1 and .[0].cron == "17 6 * * 1")'
+          assert_yaml "manual dispatch must stay covered" \
+            '.["on"] | has("workflow_dispatch")'
+          assert_yaml "the contract job must cover every event" \
+            '.jobs."validate-scaffold".if == strenv(expected_if)'
+          assert_yaml "the contract job must have no dependencies" \
+            '.jobs."validate-scaffold".needs == null'
+          assert_yaml "the contract job must fail closed" \
+            '.jobs."validate-scaffold" | has("continue-on-error") | not'
+          assert_yaml "the contract step must run and fail closed" '
+            .jobs."validate-scaffold".steps
+            | map(select(.id == "validate-drift-gate-contract"))
+            | map(select(
+                (has("if") or has("continue-on-error")) | not
+              ))
+            | length == 1
+          '
+          assert_yaml "all events must reach admissibility" \
+            '.jobs.admissibility.if == strenv(expected_if)'
+          assert_yaml "admissibility must have no dependencies" \
+            '.jobs.admissibility.needs == null'
+          assert_yaml "admissibility steps must be unconditional" '
+            .jobs.admissibility.steps
+            | map(select(has("if")))
+            | length == 0
+          '
+          assert_yaml "admissibility steps must propagate errors" '
+            .jobs.admissibility.steps
+            | map(select(has("continue-on-error")))
+            | length == 0
+          '
+          assert_yaml "Kyverno evaluation must stay in the job" '
+            .jobs.admissibility.steps
+            | map(select(
+                .id == "apply-admission-policies"
+                and (.run | test(
+                  "(?m)^[[:space:]]*\\./kyverno apply[[:space:]]"
+                ))
+                and (.run | test(
+                  "(?m)^[[:space:]]*check_set platform " +
+                  "\\.platform/k8s/bases/infrastructure/" +
+                  "cluster-policies true[[:space:]]*$"
+                ))
+                and (.run | test(
+                  "(?m)^[[:space:]]*check_set shared " +
+                  "\\.shared-policies false[[:space:]]*$"
+                ))
+              ))
+            | length == 1
+          '
+          assert_yaml "admissibility must fail closed" \
+            '.jobs.admissibility | has("continue-on-error") | not'
       - name: ♻️ Cache CRD schemas
         # Persist the schemas kubeconform downloads from the catalog, keyed on the
         # pinned ref. A cache hit makes the validate step network-free (no fetch at
@@ -159,6 +239,7 @@ jobs:
           path: .shared-policies
           persist-credentials: false
       - name: 🛂 Apply admission policies to the rendered scaffold
+        id: apply-admission-policies
         run: |
           set -euo pipefail
           # Download + checksum-verify the kyverno CLI (supply-chain integrity).

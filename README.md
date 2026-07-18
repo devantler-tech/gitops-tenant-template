@@ -55,7 +55,7 @@ tenant still carrying these from an older sync can delete them for good):**
 
 | File | Purpose |
 |---|---|
-| `.github/workflows/validate-scaffold.yaml` | Renders `deploy/` (`kubectl kustomize`) **and schema-validates** every rendered resource with `kubeconform` (`-strict`, built-in schemas + a pinned CRD catalog) to gate template-repo PRs against a broken *or schema-invalid* scaffold; no-ops in tenants |
+| `.github/workflows/validate-scaffold.yaml` | Renders `deploy/` (`kubectl kustomize`), **schema-validates** every resource with `kubeconform`, and applies the live Platform/shared Kyverno policies. It gates template PRs and rechecks upstream admission drift every Monday at 06:17 UTC (or on manual dispatch); an inline structural guard pins those triggers and their path to the policy evaluation. The workflow no-ops in tenants and is scaffold-time only |
 | `scripts/rename-placeholders.sh` (+ its test) | One-shot rename of the placeholder app to your tenant name |
 
 **Yours (list these in `.templatesyncignore`):**
@@ -104,6 +104,7 @@ only artifacts from this trusted workflow are reconciled.
 ## Validate locally
 
 ```sh
-kubectl kustomize deploy/        # manifests build
-actionlint .github/workflows/*   # workflows parse
+kubectl kustomize deploy/                              # manifests build
+sh scripts/rename-placeholders.test.sh                # onboarding contract
+actionlint .github/workflows/*                         # workflows parse
 ```
