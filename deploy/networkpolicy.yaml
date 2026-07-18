@@ -1,11 +1,18 @@
 # CiliumNetworkPolicy that re-opens the paths this tenant needs.
 #
 # The platform's `add-default-deny` Kyverno policy generates a deny-all
-# CiliumNetworkPolicy in EVERY tenant namespace (ingress + egress denied; only a
-# companion allow-dns policy is auto-generated). A tenant that ships no allow
-# policy is therefore unreachable from the platform Gateway and cannot reach its
-# own database — so the scaffold ships one day-one. Trim the rules you don't use
-# (e.g. drop the CloudNativePG/intra-namespace rules if you deleted cluster.yaml).
+# CiliumNetworkPolicy in EVERY tenant namespace (ingress + egress denied),
+# alongside a companion allow-dns CiliumNetworkPolicy and a plain
+# `networking.k8s.io/v1` NetworkPolicy of the same name. A tenant that ships no
+# allow policy is therefore unreachable from the platform Gateway and cannot
+# reach its own database — so the scaffold ships one day-one. Trim the rules you
+# don't use (e.g. drop the CloudNativePG/intra-namespace rules if you deleted
+# cluster.yaml).
+#
+# Only a CiliumNetworkPolicy is needed to re-open a path, even though two policy
+# kinds land in the namespace: Cilium evaluates the union of the allow-sets it
+# derives from both kinds, so the standard NetworkPolicy does not re-block
+# traffic this file permits.
 #
 # An empty endpoint selector (`{}`) in a fromEndpoints/toEndpoints rule of a
 # namespaced CiliumNetworkPolicy selects pods in THIS tenant's own namespace, so
