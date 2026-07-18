@@ -203,10 +203,22 @@ jobs:
   # this gate exists to track the live admission truth — drift IS the signal — the
   # mirror of the schema job's pinned-catalog rationale, where determinism wins.
   # Scope notes: PodSecurity (namespace-label PSA) is not checkable offline and is
-  # out of scope here; only `ClusterPolicy` resources are applied (a future CEL
-  # ValidatingPolicy in either source needs adding explicitly); generate rules and
-  # mutate-existing rules are filtered out — they act on cluster state, require a
-  # live client, and never reject an applied manifest.
+  # out of scope here; generate rules and mutate-existing rules are filtered out —
+  # they act on cluster state, require a live client, and never reject an applied
+  # manifest.
+  #
+  # Only `ClusterPolicy` resources are applied. The platform also ships CEL
+  # `ImageValidatingPolicy` resources (`verify-app-images`, `verify-ksail-images`),
+  # and `verify-app-images` IS Deny-mode over every `ghcr.io/devantler-tech/*`
+  # tenant image — so this gate deliberately does not cover the one policy class
+  # that can reject a tenant pod on image provenance. That is a scope boundary,
+  # not an oversight: those policies check cosign signatures and attestations on a
+  # published digest, which needs registry access and a real signed image. The
+  # scaffold's placeholder tag is neither, so applying them here could only ever
+  # produce a false failure. Tenant images earn their signature at publish time —
+  # `cd.yaml` calls the shared `publish-app.yaml`, whose keyless signing identity
+  # is what `verify-app-images` accepts — so provenance is enforced in CD and at
+  # admission, just not in this offline gate.
   admissibility:
     name: Platform Admissibility
     if: github.repository == 'devantler-tech/gitops-tenant-template'
