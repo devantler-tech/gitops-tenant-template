@@ -254,6 +254,8 @@ jobs:
         # These files become tenant-owned immediately after creation, so a stale
         # trust or promotion rule cannot be repaired by template sync later.
         run: sh scripts/agent-instructions.test.sh
+      - name: 🛡️ Validate Pod Security admission contract
+        run: sh scripts/pod-security-admission-contract.test.sh
 
   # Platform admissibility gate (#71, epic #6 theme 4): the scaffold's promise is
   # "admissible on day one", so apply the platform's LIVE Kyverno admission policy
@@ -661,3 +663,32 @@ jobs:
           echo "spread-pods lockstep OK:"
           printf '%s\n' "${actual}"
           echo "selectors verified equivalent (platform request-derived In; scaffold matchLabels ${scaffold_app})"
+
+  # The offline Kyverno job above cannot exercise namespace-label Pod Security
+  # Admission. Derive the Pod that the rendered Deployment creates and submit it
+  # to a real, pinned Kubernetes API, so a tenant cannot ship a restricted-
+  # baseline regression behind green schema and policy checks. This stays
+  # template-only like the other scaffold gates.
+  pod-security-admission:
+    name: Pod Security Admission
+    if: github.repository == 'devantler-tech/gitops-tenant-template'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      KIND_VERSION: v0.32.0
+      KIND_NODE_IMAGE: kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
+      POD_SECURITY_VERSION: v1.36
+    steps:
+      - name: 🔒 Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - name: 📥 Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: 📦 Install pinned Kind
+        run: GOTOOLCHAIN=local go install "sigs.k8s.io/kind@${KIND_VERSION}"
+      - name: 🛡️ Exercise restricted admission
+        run: sh scripts/pod-security-admission.test.sh
