@@ -62,10 +62,25 @@ spec:
       # Spread replicas across nodes so a scale-up to 2-3 replicas is actually
       # drain-safe: without this, both replicas can land on one node and defeat
       # the `maxUnavailable: 1` PDB. A single replica satisfies it trivially.
+      #
+      # ⚠️ The platform's `spread-pods` ClusterPolicy would inject an equivalent
+      # constraint — but its mutation uses Kyverno's add-if-not-present anchor
+      # (`+(topologySpreadConstraints)`), so authoring one here means the
+      # platform's version is skipped entirely and this block is what runs.
+      # Keep it in lockstep with the platform's; `matchLabelKeys` in particular
+      # is load-bearing, not optional (see below). The `Platform Admissibility`
+      # CI job asserts the two still agree.
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: DoNotSchedule
+          # Scope skew per ReplicaSet revision. Without this, a rolling update's
+          # surge pods (new revision) count against the old revision's skew, and
+          # under `DoNotSchedule` the new ReplicaSet can be left unschedulable —
+          # the rollout deadlocks. Only bites at 2+ replicas, which is exactly
+          # when you least want to discover it. Requires k8s >= 1.27 (GA 1.34).
+          matchLabelKeys:
+            - pod-template-hash
           labelSelector:
             matchLabels:
               app.kubernetes.io/name: app
