@@ -43,19 +43,6 @@ kubectl create rolebinding tenant-reconciler \
 	--clusterrole tenant-edit \
 	--serviceaccount "$namespace:$service_account" >/dev/null
 
-# The controller fills tenant-edit asynchronously from the labelled fragments.
-# Wait on a real permission instead of sleeping and trusting timing.
-attempt=0
-while [ "$attempt" -lt 30 ]; do
-	result=$(kubectl auth can-i get deployments.apps \
-		--namespace "$namespace" --as="$identity" 2>/dev/null || true)
-	[ "$result" = "yes" ] && break
-	attempt=$((attempt + 1))
-	sleep 1
-done
-[ "${result:-}" = "yes" ] ||
-	fail "tenant-edit aggregation did not grant deployments.apps"
-
 kubectl kustomize "$repo_root/deploy" > "$work_dir/rendered.yaml"
 actual_inventory=$(yq eval-all -o=json -I=0 '[.]' "$work_dir/rendered.yaml" |
 	jq -r '.[] | [.apiVersion, .kind] | @tsv' | sort)
@@ -94,7 +81,9 @@ subject_access_allowed() {
 			;;
 	esac
 
-	sar_result=$(jq -n \
+	sar_request_file=$work_dir/subject-access-review-request.json
+	sar_response_file=$work_dir/subject-access-review-response.json
+	if ! jq -n \
 		--arg user "$identity" \
 		--arg verb "$sar_verb" \
 		--arg group "$sar_api_group" \
@@ -110,9 +99,53 @@ subject_access_allowed() {
 		      + (if $namespace == "" then {} else {namespace: $namespace} end))
 		  }
 		}
-		' | kubectl create -f - -o json | jq -r '.status.allowed')
-	[ "$sar_result" = "true" ]
+		' > "$sar_request_file"; then
+		fail "could not build SubjectAccessReview for $sar_verb $sar_qualified_resource"
+	fi
+	if ! kubectl create -f "$sar_request_file" -o json > "$sar_response_file"; then
+		fail "SubjectAccessReview request failed for $sar_verb $sar_qualified_resource"
+	fi
+	if ! sar_result=$(jq -r '
+		if (.status.allowed | type) == "boolean"
+		then (.status.allowed | tostring)
+		else error("status.allowed is not boolean")
+		end
+	' "$sar_response_file"); then
+		fail "SubjectAccessReview response lacks boolean status.allowed for $sar_verb $sar_qualified_resource"
+	fi
+
+	case "$sar_result" in
+		true) return 0 ;;
+		false) return 1 ;;
+		*) fail "SubjectAccessReview returned invalid status.allowed: $sar_result" ;;
+	esac
 }
+
+# The aggregation controller fills tenant-edit asynchronously from five labelled
+# fragments. Wait for one permission from every fragment, not merely the first
+# fragment observed by the controller, before exercising the full matrix.
+attempt=0
+aggregation_ready=false
+while [ "$attempt" -lt 30 ]; do
+	aggregation_ready=true
+	for aggregation_resource in \
+		deployments.apps \
+		ciliumnetworkpolicies.cilium.io \
+		clusters.postgresql.cnpg.io \
+		externalsecrets.external-secrets.io \
+		httproutes.gateway.networking.k8s.io
+	do
+		if ! subject_access_allowed get "$aggregation_resource" "$namespace"; then
+			aggregation_ready=false
+			break
+		fi
+	done
+	[ "$aggregation_ready" = "true" ] && break
+	attempt=$((attempt + 1))
+	sleep 1
+done
+[ "$aggregation_ready" = "true" ] ||
+	fail "tenant-edit aggregation did not grant every role fragment"
 
 expect_allowed() {
 	allowed_verb=$1

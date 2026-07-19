@@ -8,6 +8,7 @@ workflow=$repo_root/.github/workflows/validate-scaffold.yaml
 runtime=$repo_root/scripts/tenant-rbac.test.sh
 pod_security_runtime=$repo_root/scripts/pod-security-admission.test.sh
 readme=$repo_root/README.md
+template_sync_ignore=$repo_root/.templatesyncignore
 
 fail() {
 	echo "FAIL: $*" >&2
@@ -19,6 +20,7 @@ validate_contract() {
 	runtime_file=$2
 	pod_security_file=$3
 	readme_file=$4
+	ignore_file=$5
 
 	[ -f "$runtime_file" ] || fail "tenant RBAC runtime is missing"
 
@@ -59,9 +61,11 @@ validate_contract() {
 		'cnpg-tenant-edit.yaml' \
 		'external-secrets-tenant-edit.yaml' \
 		'gateway-tenant-edit.yaml' \
-		'kubectl auth can-i' \
 		'authorization.k8s.io/v1' \
 		'kind: "SubjectAccessReview"' \
+		'SubjectAccessReview request failed' \
+		'SubjectAccessReview response lacks boolean status.allowed' \
+		'for aggregation_resource in' \
 		'system:serviceaccount:tenant-rbac-test:tenant-reconciler' \
 		'get list watch create patch update delete' \
 		'deployments.apps' \
@@ -94,17 +98,19 @@ validate_contract() {
 	do
 		printf '%s\n' "$owned_ignore_block" | grep -Fxq -- "$scaffold_path" ||
 			fail "README ignore example lacks: $scaffold_path"
+		grep -Fxq -- "$scaffold_path" "$ignore_file" ||
+			fail ".templatesyncignore lacks: $scaffold_path"
 	done
 }
 
 if [ "${1:-}" = "--validate" ]; then
-	[ "$#" -eq 5 ] ||
-		fail "usage: $0 --validate <workflow> <runtime> <pod-security-runtime> <readme>"
-	validate_contract "$2" "$3" "$4" "$5"
+	[ "$#" -eq 6 ] ||
+		fail "usage: $0 --validate <workflow> <runtime> <pod-security-runtime> <readme> <ignore>"
+	validate_contract "$2" "$3" "$4" "$5" "$6"
 	exit 0
 fi
 
-validate_contract "$workflow" "$runtime" "$pod_security_runtime" "$readme"
+validate_contract "$workflow" "$runtime" "$pod_security_runtime" "$readme" "$template_sync_ignore"
 
 mutation_dir=$(mktemp -d)
 trap 'rm -rf "$mutation_dir"' EXIT
@@ -115,11 +121,13 @@ run_mutation() {
 	runtime_mutation=$3
 	pod_security_mutation=$4
 	readme_mutation=${5:-}
+	ignore_mutation=${6:-}
 
 	cp "$workflow" "$mutation_dir/workflow.yaml"
 	cp "$runtime" "$mutation_dir/runtime.sh"
 	cp "$pod_security_runtime" "$mutation_dir/pod-security.sh"
 	cp "$readme" "$mutation_dir/README.md"
+	cp "$template_sync_ignore" "$mutation_dir/templatesyncignore"
 
 	if [ -n "$workflow_mutation" ]; then
 		yq eval "$workflow_mutation" "$mutation_dir/workflow.yaml" > "$mutation_dir/mutant.yaml"
@@ -137,12 +145,17 @@ run_mutation() {
 		sed "$readme_mutation" "$mutation_dir/README.md" > "$mutation_dir/mutant.md"
 		mv "$mutation_dir/mutant.md" "$mutation_dir/README.md"
 	fi
+	if [ -n "$ignore_mutation" ]; then
+		sed "$ignore_mutation" "$mutation_dir/templatesyncignore" > "$mutation_dir/mutant.ignore"
+		mv "$mutation_dir/mutant.ignore" "$mutation_dir/templatesyncignore"
+	fi
 
 	if (validate_contract \
 		"$mutation_dir/workflow.yaml" \
 		"$mutation_dir/runtime.sh" \
 		"$mutation_dir/pod-security.sh" \
-		"$mutation_dir/README.md") >/dev/null 2>&1; then
+		"$mutation_dir/README.md" \
+		"$mutation_dir/templatesyncignore") >/dev/null 2>&1; then
 		fail "mutation passed: $description"
 	fi
 }
@@ -161,11 +174,73 @@ run_mutation "resource mapping removed" '' \
 	'/httproutes\.gateway\.networking\.k8s\.io/d' ''
 run_mutation "authorization invocation removed" '' \
 	'/kind: "SubjectAccessReview"/d' ''
+run_mutation "authorization execution error hidden" '' \
+	'/SubjectAccessReview request failed/d' ''
+run_mutation "authorization response error hidden" '' \
+	'/SubjectAccessReview response lacks boolean status\.allowed/d' ''
+run_mutation "aggregate readiness loop removed" '' \
+	'/for aggregation_resource in/d' ''
 run_mutation "RBAC runtime call removed" '' '' \
 	'/tenant-rbac\.test\.sh/d'
 run_mutation "denial boundary removed" '' \
 	'/pods\/exec/d' ''
 run_mutation "documented ignore removed" '' '' '' \
 	'/^scripts\/tenant-rbac\.test\.sh$/d'
+run_mutation "actual ignore removed" '' '' '' '' \
+	'/^scripts\/tenant-rbac\.test\.sh$/d'
 
-echo "PASS: tenant RBAC contract (happy path + 10 safety mutations)"
+fake_bin=$mutation_dir/fake-bin
+fake_roles=$mutation_dir/cluster-roles
+mkdir -p "$fake_bin" "$fake_roles"
+for role_file in \
+	tenant-edit.yaml \
+	tenant-base-edit.yaml \
+	cilium-tenant-edit.yaml \
+	cnpg-tenant-edit.yaml \
+	external-secrets-tenant-edit.yaml \
+	gateway-tenant-edit.yaml
+do
+	: > "$fake_roles/$role_file"
+done
+
+# These are literal lines for the generated fake kubectl, not this shell.
+# shellcheck disable=SC2016
+{
+	printf '%s\n' '#!/usr/bin/env sh' 'set -eu'
+	printf '%s\n' 'if [ "${1:-}" = "kustomize" ]; then exec "$REAL_KUBECTL" "$@"; fi'
+	printf '%s\n' 'if [ "${1:-}" = "create" ] && [ "${2:-}" = "-f" ]; then'
+	printf '%s\n' '  case "$FAKE_SAR_MODE" in'
+	printf '%s\n' '    request-error) exit 1 ;;'
+	printf '%s\n' '    malformed) printf "%s\n" "{}" ;;'
+	printf '%s\n' '    partial)'
+	printf '%s\n' '      resource=$(jq -r ".spec.resourceAttributes.resource" "$3")'
+	printf '%s\n' '      [ "$resource" = "deployments" ] && allowed=true || allowed=false'
+	printf '%s\n' '      printf "{\"status\":{\"allowed\":%s}}\n" "$allowed"'
+	printf '%s\n' '      ;;'
+	printf '%s\n' '  esac'
+	printf '%s\n' 'fi'
+	printf '%s\n' 'exit 0'
+} > "$fake_bin/kubectl"
+printf '%s\n' '#!/usr/bin/env sh' 'exit 0' > "$fake_bin/sleep"
+chmod +x "$fake_bin/kubectl" "$fake_bin/sleep"
+real_kubectl=$(command -v kubectl)
+
+exercise_runtime_failure() {
+	mode=$1
+	expected_error=$2
+	if output=$(PATH="$fake_bin:$PATH" \
+		REAL_KUBECTL="$real_kubectl" \
+		FAKE_SAR_MODE="$mode" \
+		PLATFORM_CLUSTER_ROLES_DIR="$fake_roles" \
+		sh "$runtime" 2>&1); then
+		fail "runtime unexpectedly passed the $mode SubjectAccessReview control"
+	fi
+	printf '%s\n' "$output" | grep -Fq -- "$expected_error" ||
+		fail "runtime did not fail closed for $mode SubjectAccessReview control"
+}
+
+exercise_runtime_failure request-error 'SubjectAccessReview request failed'
+exercise_runtime_failure malformed 'SubjectAccessReview response lacks boolean status.allowed'
+exercise_runtime_failure partial 'tenant-edit aggregation did not grant every role fragment'
+
+echo "PASS: tenant RBAC contract (happy path + 14 safety mutations + 3 runtime error controls)"
