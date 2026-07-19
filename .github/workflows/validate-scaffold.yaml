@@ -531,39 +531,43 @@ jobs:
           kubectl kustomize .platform/k8s/bases/infrastructure/cluster-policies \
             > spread-policies.yaml
 
-          # Compare the WHOLE constraint, not a field allowlist. An allowlist
-          # silently drops any field it doesn't name — so the day the platform
-          # adds `minDomains`, `nodeAffinityPolicy` or `nodeTaintsPolicy`, the
-          # gate would stay green while the scaffold diverged, which is the exact
-          # scenario it exists to catch. Only `labelSelector` is normalised away:
-          # the platform templates it from the admission request (matchExpressions
-          # over a Kyverno variable) while the scaffold hard-codes the same app via
-          # matchLabels — different spelling, identical selection, and comparing
-          # them literally would be permanent false drift. `sort_keys` makes the
-          # comparison independent of authoring order on either side.
-          normalise='del(.labelSelector) | sort_keys(..)'
+          # Compare the WHOLE constraint LIST, not one element and not a field
+          # allowlist. Indexing `[0]` would let the platform add a second
+          # constraint (say, a zone spread) that the scaffold never inherits
+          # while this stayed green; an allowlist silently drops any field it
+          # doesn't name, so the day the platform adds `minDomains`,
+          # `nodeAffinityPolicy` or `nodeTaintsPolicy` the gate would stay green
+          # while the scaffold diverged. Both are the exact drift this gate
+          # exists to catch. `labelSelector` is the ONE field held out here —
+          # the platform templates it from the admission request
+          # (matchExpressions over a Kyverno variable) while the scaffold
+          # hard-codes the same app via matchLabels, so comparing them literally
+          # would be permanent false drift — and it is asserted separately
+          # below rather than discarded. `sort_keys` makes the comparison
+          # independent of authoring order on either side.
+          normalise='del(.[].labelSelector) | sort_keys(..)'
 
           expected=$(yq eval-all "
             select(.kind == \"ClusterPolicy\" and .metadata.name == \"spread-pods\")
-            | .spec.rules[0].mutate.patchStrategicMerge.spec.template.spec.\"+(topologySpreadConstraints)\"[0]
+            | .spec.rules[0].mutate.patchStrategicMerge.spec.template.spec.\"+(topologySpreadConstraints)\"
             | ${normalise}
           " spread-policies.yaml)
 
           actual=$(yq eval-all "
             select(.kind == \"Deployment\")
-            | .spec.template.spec.topologySpreadConstraints[0]
+            | .spec.template.spec.topologySpreadConstraints
             | ${normalise}
           " rendered.yaml)
 
-          # Fail closed on a read that found nothing: an empty document, or a
-          # bare `null`, means the policy was renamed, the anchor changed, or the
-          # block was deleted outright — none of which may pass green. A read
-          # that found a constraint but a DIFFERENT one falls through to the diff
-          # below, which shows both sides.
+          # Fail closed on a read that found nothing: an empty document, a bare
+          # `null`, or an empty list means the policy was renamed, the anchor
+          # changed, or the block was deleted outright — none of which may pass
+          # green. A read that found constraints but DIFFERENT ones falls
+          # through to the diff below, which shows both sides.
           for pair in "platform:${expected}" "scaffold:${actual}"; do
             side=${pair%%:*}
             doc=${pair#*:}
-            if [ -z "${doc}" ] || [ "${doc}" = "null" ]; then
+            if [ -z "${doc}" ] || [ "${doc}" = "null" ] || [ "${doc}" = "[]" ]; then
               echo "::error::${side}: found no topology spread constraint at all — the policy or the scaffold moved; fix the reader rather than trusting a vacuous green"
               printf '%s\n' "${doc}"
               exit 1
@@ -579,5 +583,81 @@ jobs:
             exit 1
           fi
 
+          # The selectors are held out above because they are SPELLED
+          # differently, not because they are unimportant: the selector decides
+          # which pods count toward the skew, so a platform change there
+          # silently changes the scaffold's scheduling guarantee. Rather than
+          # canonicalising two shapes into one — which re-introduces the same
+          # blindness the moment a shape gains a field — pin each side to the
+          # exact form that was hand-verified equivalent: the platform selects
+          # `app.kubernetes.io/name In [<the admitted object's own name>]`, the
+          # scaffold selects `app.kubernetes.io/name = <its own name>`. Same
+          # selection, different spelling. If EITHER shape changes at all — a
+          # second matchExpression, a different key, a broadened operator —
+          # this goes red and a human re-derives the equivalence instead of a
+          # script guessing at it.
+          platform_selectors=$(yq eval-all "
+            select(.kind == \"ClusterPolicy\" and .metadata.name == \"spread-pods\")
+            | [ .spec.rules[0].mutate.patchStrategicMerge.spec.template.spec.\"+(topologySpreadConstraints)\"[].labelSelector ]
+            | sort_keys(..)
+          " spread-policies.yaml)
+
+          expected_platform_selectors=$(yq eval 'sort_keys(..)' - <<'PLATFORM_SELECTOR'
+          - matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - '{{request.object.spec.template.metadata.labels."app.kubernetes.io/name"}}'
+          PLATFORM_SELECTOR
+          )
+
+          if [ "${platform_selectors}" != "${expected_platform_selectors}" ]; then
+            echo "::error::the platform's spread-pods labelSelector is no longer the shape this scaffold was verified equivalent to — re-derive the equivalence and update both sides"
+            echo "--- platform (spread-pods) ---"
+            printf '%s\n' "${platform_selectors}"
+            echo "--- verified-equivalent shape ---"
+            printf '%s\n' "${expected_platform_selectors}"
+            exit 1
+          fi
+
+          # Asserting the scaffold's selector against the Deployment's OWN app
+          # name — rather than a hardcoded string — is what makes it the same
+          # statement as the platform's request-derived variable. `strenv`
+          # interpolates the name without it ever being YAML text, so a value
+          # needing quoting cannot change the document's shape.
+          scaffold_app=$(yq eval-all '
+            select(.kind == "Deployment")
+            | .spec.template.metadata.labels."app.kubernetes.io/name"
+          ' rendered.yaml)
+
+          if [ -z "${scaffold_app}" ] || [ "${scaffold_app}" = "null" ]; then
+            echo "::error::scaffold: the Deployment has no app.kubernetes.io/name template label, so its spread selector cannot be checked against its own identity"
+            exit 1
+          fi
+
+          scaffold_selectors=$(yq eval-all "
+            select(.kind == \"Deployment\")
+            | [ .spec.template.spec.topologySpreadConstraints[].labelSelector ]
+            | sort_keys(..)
+          " rendered.yaml)
+
+          expected_scaffold_selectors=$(SCAFFOLD_APP="${scaffold_app}" yq eval '
+            .[0].matchLabels."app.kubernetes.io/name" = strenv(SCAFFOLD_APP) | sort_keys(..)
+          ' - <<'SCAFFOLD_SELECTOR'
+          - matchLabels:
+              app.kubernetes.io/name: PLACEHOLDER
+          SCAFFOLD_SELECTOR
+          )
+
+          if [ "${scaffold_selectors}" != "${expected_scaffold_selectors}" ]; then
+            echo "::error::the scaffold's spread labelSelector no longer selects exactly its own app, so it no longer matches the platform's request-derived selection"
+            echo "--- scaffold ---"
+            printf '%s\n' "${scaffold_selectors}"
+            echo "--- expected (selects its own app.kubernetes.io/name) ---"
+            printf '%s\n' "${expected_scaffold_selectors}"
+            exit 1
+          fi
+
           echo "spread-pods lockstep OK:"
           printf '%s\n' "${actual}"
+          echo "selectors verified equivalent (platform request-derived In; scaffold matchLabels ${scaffold_app})"
