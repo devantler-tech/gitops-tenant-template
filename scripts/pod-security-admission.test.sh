@@ -77,4 +77,6 @@ expect_denied privilege-escalation \
 expect_denied capability-add \
 	'.spec.containers[0].securityContext.capabilities.add = ["SYS_ADMIN"]'
 
+sh "$repo_root/scripts/tenant-rbac.test.sh"
+
 echo "PASS: Pod Security restricted admission (valid scaffold + 3 negative controls)"

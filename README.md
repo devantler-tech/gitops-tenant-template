@@ -55,10 +55,11 @@ tenant still carrying these from an older sync can delete them for good):**
 
 | File | Purpose |
 |---|---|
-| `.github/workflows/validate-scaffold.yaml` | Renders `deploy/`, schema-validates every resource, applies the live Platform/shared Kyverno policies, and submits the Pod produced by the Deployment to a pinned Kubernetes API that enforces the platform's Pod Security `restricted` level. Its positive path plus privilege, capability, and non-root negative controls catch day-one admission failures before a tenant is created. It gates template PRs and rechecks upstream admission drift every Monday at 06:17 UTC (or on manual dispatch); structural mutation tests keep every layer fail-closed. The workflow no-ops in tenants and is scaffold-time only |
+| `.github/workflows/validate-scaffold.yaml` | Renders `deploy/`, schema-validates every resource, applies the live Platform/shared Kyverno policies, and exercises a pinned Kubernetes API. The live checks prove the Deployment passes Pod Security `restricted`, the Platform tenant identity can reconcile every rendered kind, and cluster-scoped or interactive privileges remain denied. It gates template PRs and rechecks upstream admission/RBAC drift every Monday at 06:17 UTC (or on manual dispatch); structural mutation tests keep every layer fail-closed. The workflow no-ops in tenants and is scaffold-time only |
 | `scripts/rename-placeholders.sh` (+ its test) | One-shot rename of the placeholder app to your tenant name |
 | `scripts/agent-instructions.test.sh` | Fails closed if the one-time agent scaffold loses its ownership, bot, external-code, exact-head review, or user-path evaluation boundaries |
 | `scripts/pod-security-admission*.test.sh` | Proves the rendered Deployment is accepted at Pod Security `restricted` while unsafe mutations are denied, and pins that live gate against structural bypasses |
+| `scripts/tenant-rbac*.test.sh` | Proves the Platform tenant reconciliation identity can manage every rendered scaffold resource while cluster-scoped and interactive privileges stay denied |
 
 **Yours (list these in `.templatesyncignore`):**
 
@@ -84,6 +85,8 @@ scripts/rename-placeholders.test.sh
 scripts/agent-instructions.test.sh
 scripts/pod-security-admission.test.sh
 scripts/pod-security-admission-contract.test.sh
+scripts/tenant-rbac.test.sh
+scripts/tenant-rbac-contract.test.sh
 .github/workflows/validate-scaffold.yaml
 ```
 
@@ -112,5 +115,7 @@ only artifacts from this trusted workflow are reconciled.
 kubectl kustomize deploy/                              # manifests build
 sh scripts/rename-placeholders.test.sh                # onboarding contract
 sh scripts/agent-instructions.test.sh                 # agent safety contract
+sh scripts/pod-security-admission-contract.test.sh    # Pod Security workflow contract
+sh scripts/tenant-rbac-contract.test.sh               # Platform tenant RBAC workflow contract
 actionlint .github/workflows/*                         # workflows parse
 ```
