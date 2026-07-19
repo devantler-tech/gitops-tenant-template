@@ -6,6 +6,7 @@ script_dir=$(CDPATH='' cd -P -- "$(dirname -- "$0")" && pwd)
 repo_root=$(dirname -- "$script_dir")
 workflow=$repo_root/.github/workflows/validate-scaffold.yaml
 runtime=$repo_root/scripts/pod-security-admission.test.sh
+readme=$repo_root/README.md
 
 fail() {
 	echo "FAIL: $*" >&2
@@ -15,6 +16,7 @@ fail() {
 validate_contract() {
 	workflow_file=$1
 	runtime_file=$2
+	readme_file=$3
 
 	[ -f "$runtime_file" ] || fail "Pod Security admission runtime is missing"
 
@@ -53,15 +55,29 @@ validate_contract() {
 		grep -Fq -- "$needle" "$runtime_file" ||
 			fail "Pod Security admission runtime lacks: $needle"
 	done
+
+	owned_ignore_block=$(awk '
+		/^\*\*Yours \(list these in `\.templatesyncignore`\):\*\*$/ { found = 1; next }
+		found && /^```gitignore$/ { inside = 1; next }
+		inside && /^```$/ { exit }
+		inside { print }
+	' "$readme_file")
+	for scaffold_path in \
+		'scripts/pod-security-admission.test.sh' \
+		'scripts/pod-security-admission-contract.test.sh'
+	do
+		printf '%s\n' "$owned_ignore_block" | grep -Fxq -- "$scaffold_path" ||
+			fail "README ignore example lacks: $scaffold_path"
+	done
 }
 
 if [ "${1:-}" = "--validate" ]; then
-	[ "$#" -eq 3 ] || fail "usage: $0 --validate <workflow> <runtime>"
-	validate_contract "$2" "$3"
+	[ "$#" -eq 4 ] || fail "usage: $0 --validate <workflow> <runtime> <readme>"
+	validate_contract "$2" "$3" "$4"
 	exit 0
 fi
 
-validate_contract "$workflow" "$runtime"
+validate_contract "$workflow" "$runtime" "$readme"
 
 mutation_dir=$(mktemp -d)
 trap 'rm -rf "$mutation_dir"' EXIT
@@ -70,9 +86,11 @@ run_mutation() {
 	description=$1
 	workflow_mutation=$2
 	runtime_mutation=$3
+	readme_mutation=${4:-}
 
 	cp "$workflow" "$mutation_dir/workflow.yaml"
 	cp "$runtime" "$mutation_dir/runtime.sh"
+	cp "$readme" "$mutation_dir/README.md"
 
 	if [ -n "$workflow_mutation" ]; then
 		yq eval "$workflow_mutation" "$mutation_dir/workflow.yaml" > "$mutation_dir/mutant.yaml"
@@ -82,8 +100,12 @@ run_mutation() {
 		sed "$runtime_mutation" "$mutation_dir/runtime.sh" > "$mutation_dir/mutant.sh"
 		mv "$mutation_dir/mutant.sh" "$mutation_dir/runtime.sh"
 	fi
+	if [ -n "$readme_mutation" ]; then
+		sed "$readme_mutation" "$mutation_dir/README.md" > "$mutation_dir/mutant.md"
+		mv "$mutation_dir/mutant.md" "$mutation_dir/README.md"
+	fi
 
-	if (validate_contract "$mutation_dir/workflow.yaml" "$mutation_dir/runtime.sh") \
+	if (validate_contract "$mutation_dir/workflow.yaml" "$mutation_dir/runtime.sh" "$mutation_dir/README.md") \
 		>/dev/null 2>&1; then
 		fail "mutation passed: $description"
 	fi
@@ -94,5 +116,6 @@ run_mutation "kind version unpinned" '.jobs."pod-security-admission".env.KIND_VE
 run_mutation "server admission bypassed" '' 's/--server-side --dry-run=server/--dry-run=client/'
 run_mutation "Pod conversion removed" '' 's/\.kind = "Pod"/.kind = "Deployment"/'
 run_mutation "negative control removed" '' 's/capability-add/capability-removed/'
+run_mutation "documented ignore removed" '' '' '/^scripts\/pod-security-admission\.test\.sh$/d'
 
-echo "PASS: Pod Security admission contract (happy path + 5 safety mutations)"
+echo "PASS: Pod Security admission contract (happy path + 6 safety mutations)"

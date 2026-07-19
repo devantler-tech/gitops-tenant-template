@@ -82,6 +82,8 @@ deploy/
 scripts/rename-placeholders.sh
 scripts/rename-placeholders.test.sh
 scripts/agent-instructions.test.sh
+scripts/pod-security-admission.test.sh
+scripts/pod-security-admission-contract.test.sh
 .github/workflows/validate-scaffold.yaml
 ```
 
