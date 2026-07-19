@@ -510,3 +510,73 @@ jobs:
             tenant-clustersecretstore.yaml \
             --values-file tenant-values.yaml \
             --userinfo platform-user-info.yaml
+      - name: 🔗 Assert the spread-pods lockstep
+        id: assert-spread-lockstep
+        # The platform's `spread-pods` policy injects its topology spread
+        # constraint through Kyverno's ADD-IF-NOT-PRESENT anchor
+        # (`+(topologySpreadConstraints)`). Because the scaffold authors its own
+        # constraint, that mutation never fires — the scaffold's block is what
+        # actually runs, and any guard the platform adds to its version (notably
+        # `matchLabelKeys: [pod-template-hash]`, which stops a rolling update
+        # deadlocking under `DoNotSchedule`) is silently NOT inherited.
+        #
+        # So assert the two agree, reading the expectation from the platform's
+        # live policy rather than a copy: if the platform changes its remedy,
+        # this goes red and the scaffold gets updated. Same philosophy as the
+        # rest of this job — drift IS the signal.
+        run: |
+          set -euo pipefail
+
+          kubectl kustomize deploy/ > rendered.yaml
+          kubectl kustomize .platform/k8s/bases/infrastructure/cluster-policies \
+            > spread-policies.yaml
+
+          # The scheduling semantics that decide whether a rolling update can
+          # deadlock. `labelSelector` is deliberately excluded: the platform
+          # templates it from the admission request (matchExpressions over a
+          # Kyverno variable) while the scaffold hard-codes the same app via
+          # matchLabels — different spelling, identical selection, and comparing
+          # them literally would be permanent false drift.
+          fields='{"maxSkew": .maxSkew, "topologyKey": .topologyKey,
+                   "whenUnsatisfiable": .whenUnsatisfiable,
+                   "matchLabelKeys": .matchLabelKeys}'
+
+          expected=$(yq eval-all "
+            select(.kind == \"ClusterPolicy\" and .metadata.name == \"spread-pods\")
+            | .spec.rules[0].mutate.patchStrategicMerge.spec.template.spec.\"+(topologySpreadConstraints)\"[0]
+            | ${fields}
+          " spread-policies.yaml)
+
+          actual=$(yq eval-all "
+            select(.kind == \"Deployment\")
+            | .spec.template.spec.topologySpreadConstraints[0]
+            | ${fields}
+          " rendered.yaml)
+
+          # Fail closed on a read that found nothing at all: an empty document,
+          # or one whose every field is null, means the policy was renamed, the
+          # anchor changed, or the block was deleted outright — none of which may
+          # pass green. A merely INCOMPLETE read (one null field, e.g. a dropped
+          # matchLabelKeys) falls through to the diff below, which names the
+          # offending field far more usefully.
+          for pair in "platform:${expected}" "scaffold:${actual}"; do
+            side=${pair%%:*}
+            doc=${pair#*:}
+            if [ -z "${doc}" ] || ! printf '%s\n' "${doc}" | grep -qv ': null$'; then
+              echo "::error::${side}: found no topology spread constraint at all — the policy or the scaffold moved; fix the reader rather than trusting a vacuous green"
+              printf '%s\n' "${doc}"
+              exit 1
+            fi
+          done
+
+          if [ "${expected}" != "${actual}" ]; then
+            echo "::error::the scaffold's topologySpreadConstraints no longer matches what the platform's spread-pods policy would inject"
+            echo "--- platform (spread-pods) ---"
+            printf '%s\n' "${expected}"
+            echo "--- scaffold (deploy/deployment.yaml) ---"
+            printf '%s\n' "${actual}"
+            exit 1
+          fi
+
+          echo "spread-pods lockstep OK:"
+          printf '%s\n' "${actual}"
