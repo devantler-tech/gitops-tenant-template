@@ -74,6 +74,37 @@ jobs:
             fi
           }
 
+          secretstore_contract='
+            .jobs.admissibility.steps
+            | map(select(
+                .id == "apply-admission-policies"
+                and ((.run | split("restrict-tenant-secret-stores") | length) == 9)
+                and ((.run | split("externalsecret-no-clustersecretstore") | length) == 3)
+                and ((.run | split("app.kubernetes.io/managed-by") | length) == 3)
+                and ((.run | split("--values-file tenant-values.yaml") | length) == 4)
+                and ((.run | split("--userinfo tenant-user-info.yaml") | length) == 4)
+                and ((.run | split("unmanaged-values.yaml") | length) == 3)
+                and ((.run | split("platform-user-info.yaml") | length) == 3)
+                and ((.run | split("ClusterSecretStore") | length) == 3)
+                and ((.run | split("expect_secretstore_denied") | length) == 3)
+                and ((.run | split("expect_secretstore_allowed") | length) == 5)
+              ))
+            | length == 1
+          '
+
+          assert_secretstore_mutant_rejected() {
+            description=$1
+            mutation=$2
+            mutant=$(mktemp)
+            yq eval "${mutation}" "${workflow}" > "${mutant}"
+            if yq eval -e "${secretstore_contract}" "${mutant}" >/dev/null 2>&1; then
+              echo "::error::SecretStore contract accepted mutant: ${description}"
+              rm -f "${mutant}"
+              exit 1
+            fi
+            rm -f "${mutant}"
+          }
+
           assert_yaml "pull requests to main must stay covered" \
             '.["on"].pull_request.branches | (length == 1 and .[0] == "main")'
           assert_yaml "the live-policy drift gate must run weekly" \
@@ -129,6 +160,28 @@ jobs:
           '
           assert_yaml "admissibility must fail closed" \
             '.jobs.admissibility | has("continue-on-error") | not'
+          assert_yaml "tenant SecretStore admission must stay context- and mutation-proved" \
+            "${secretstore_contract}"
+
+          admission_run='(.jobs.admissibility.steps[] | select(
+            .id == "apply-admission-policies"
+          ).run)'
+          assert_secretstore_mutant_rejected "managed namespace context removed" \
+            "${admission_run} |= sub(\"app.kubernetes.io/managed-by\"; \"removed-label\")"
+          assert_secretstore_mutant_rejected "tenant values flag removed" \
+            "${admission_run} |= sub(\"--values-file tenant-values.yaml\"; \"\")"
+          assert_secretstore_mutant_rejected "tenant user info removed" \
+            "${admission_run} |= sub(\"--userinfo tenant-user-info.yaml\"; \"\")"
+          assert_secretstore_mutant_rejected "named policy removed" \
+            "${admission_run} |= sub(\"restrict-tenant-secret-stores\"; \"\")"
+          assert_secretstore_mutant_rejected "named rule removed" \
+            "${admission_run} |= sub(\"externalsecret-no-clustersecretstore\"; \"\")"
+          assert_secretstore_mutant_rejected "security mutation removed" \
+            "${admission_run} |= sub(\"ClusterSecretStore\"; \"\")"
+          assert_secretstore_mutant_rejected "denial assertion removed" \
+            "${admission_run} |= sub(\"expect_secretstore_denied\"; \"\")"
+          assert_secretstore_mutant_rejected "boundary controls removed" \
+            "${admission_run} |= (sub(\"unmanaged-values.yaml\"; \"\") | sub(\"platform-user-info.yaml\"; \"\"))"
       - name: ♻️ Cache CRD schemas
         # Persist the schemas kubeconform downloads from the catalog, keyed on the
         # pinned ref. A cache hit makes the validate step network-free (no fetch at
@@ -313,3 +366,147 @@ jobs:
 
           check_set platform .platform/k8s/bases/infrastructure/cluster-policies true
           check_set shared .shared-policies false
+
+          # The aggregate check above proves the platform policy set evaluated
+          # something, but tenant-scoped policies also need admission context.
+          # Isolate the exact high-severity rule so unrelated policy passes can
+          # never mask a skipped SecretStore boundary.
+          yq eval-all '
+            select(
+              .kind == "ClusterPolicy"
+              and .metadata.name == "restrict-tenant-secret-stores"
+            )
+          ' platform-policies.yaml > restrict-tenant-secret-stores.yaml
+          policy_count=$(grep -c '^kind: ClusterPolicy$' restrict-tenant-secret-stores.yaml)
+          [ "${policy_count}" -eq 1 ] || {
+            echo "::error::expected exactly one restrict-tenant-secret-stores policy, found ${policy_count}"
+            exit 1
+          }
+          yq eval -e '
+            [.spec.rules[].name
+              | select(. == "externalsecret-no-clustersecretstore")]
+            | length == 1
+          ' restrict-tenant-secret-stores.yaml >/dev/null || {
+            echo "::error::restrict-tenant-secret-stores is missing its ExternalSecret rule"
+            exit 1
+          }
+
+          # Model the context Flux supplies when reconciling a tenant artifact:
+          # a concrete namespace selected as KSail-managed, plus that tenant's
+          # impersonated reconciliation ServiceAccount.
+          yq eval '
+            select(.kind == "ExternalSecret")
+            | .metadata.namespace = "tenant-admission-test"
+          ' rendered.yaml > tenant-external-secret.yaml
+          resource_count=$(grep -c '^kind: ExternalSecret$' tenant-external-secret.yaml)
+          [ "${resource_count}" -eq 1 ] || {
+            echo "::error::expected exactly one rendered ExternalSecret, found ${resource_count}"
+            exit 1
+          }
+          yq eval -e '.spec.secretStoreRef.kind == "SecretStore"' \
+            tenant-external-secret.yaml >/dev/null || {
+            echo "::error::the valid scaffold no longer references its namespaced SecretStore"
+            exit 1
+          }
+          yq eval '.spec.secretStoreRef.kind = "ClusterSecretStore"' \
+            tenant-external-secret.yaml > tenant-clustersecretstore.yaml
+
+          yq -n '
+            .apiVersion = "cli.kyverno.io/v1alpha1"
+            | .kind = "Values"
+            | .metadata.name = "tenant-admission"
+            | .namespaceSelector = [{
+                "name": "tenant-admission-test",
+                "labels": {"app.kubernetes.io/managed-by": "ksail"}
+              }]
+          ' > tenant-values.yaml
+          yq -n '
+            .apiVersion = "cli.kyverno.io/v1alpha1"
+            | .kind = "Values"
+            | .metadata.name = "unmanaged-admission"
+            | .namespaceSelector = [{
+                "name": "tenant-admission-test",
+                "labels": {"app.kubernetes.io/managed-by": "manual"}
+              }]
+          ' > unmanaged-values.yaml
+          yq -n '
+            .apiVersion = "cli.kyverno.io/v1alpha1"
+            | .kind = "UserInfo"
+            | .metadata.name = "tenant-reconciler"
+            | .userInfo.username =
+                "system:serviceaccount:tenant-admission-test:tenant-admission-test"
+          ' > tenant-user-info.yaml
+          yq -n '
+            .apiVersion = "cli.kyverno.io/v1alpha1"
+            | .kind = "UserInfo"
+            | .metadata.name = "platform-reconciler"
+            | .userInfo.username =
+                "system:serviceaccount:flux-system:kustomize-controller"
+          ' > platform-user-info.yaml
+
+          run_secretstore_case() {
+            case_name=$1
+            resource=$2
+            shift 2
+            ./kyverno apply restrict-tenant-secret-stores.yaml \
+              --resource "${resource}" "$@" \
+              --audit-warn --warn-exit-code 0 \
+              > "${case_name}.out" 2>&1
+          }
+
+          expect_secretstore_allowed() {
+            case_name=$1 expected=$2 resource=$3
+            shift 3
+            if ! run_secretstore_case "${case_name}" "${resource}" "$@"; then
+              cat "${case_name}.out"
+              echo "::error::${case_name}: expected the SecretStore boundary to allow this request"
+              return 1
+            fi
+            case "${expected}" in
+              pass) result='pass: [1-9][0-9]*, fail: 0, warn: 0, error: 0' ;;
+              no-match) result='pass: 0, fail: 0, warn: 0, error: 0, skip: 0' ;;
+              *) echo "::error::unknown expected result: ${expected}"; return 1 ;;
+            esac
+            grep -Eq "${result}" "${case_name}.out" || {
+              cat "${case_name}.out"
+              echo "::error::${case_name}: Kyverno returned a vacuous or unexpected success"
+              return 1
+            }
+          }
+
+          expect_secretstore_denied() {
+            case_name=$1 resource=$2
+            shift 2
+            if run_secretstore_case "${case_name}" "${resource}" "$@"; then
+              cat "${case_name}.out"
+              echo "::error::${case_name}: ClusterSecretStore mutation was accepted"
+              return 1
+            fi
+            if ! grep -Fq 'policy restrict-tenant-secret-stores' \
+                "${case_name}.out" ||
+              ! grep -Fq 'externalsecret-no-clustersecretstore' \
+                "${case_name}.out" ||
+              ! grep -Eq 'pass: 0, fail: [1-9][0-9]*, warn: 0, error: 0' \
+                "${case_name}.out"; then
+              cat "${case_name}.out"
+              echo "::error::${case_name}: failure did not come from the expected policy and rule"
+              return 1
+            fi
+          }
+
+          expect_secretstore_allowed tenant-valid pass \
+            tenant-external-secret.yaml \
+            --values-file tenant-values.yaml \
+            --userinfo tenant-user-info.yaml
+          expect_secretstore_denied tenant-mutant \
+            tenant-clustersecretstore.yaml \
+            --values-file tenant-values.yaml \
+            --userinfo tenant-user-info.yaml
+          expect_secretstore_allowed unmanaged-mutant no-match \
+            tenant-clustersecretstore.yaml \
+            --values-file unmanaged-values.yaml \
+            --userinfo tenant-user-info.yaml
+          expect_secretstore_allowed platform-mutant no-match \
+            tenant-clustersecretstore.yaml \
+            --values-file tenant-values.yaml \
+            --userinfo platform-user-info.yaml
