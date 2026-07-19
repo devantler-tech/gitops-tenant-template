@@ -57,6 +57,7 @@ tenant still carrying these from an older sync can delete them for good):**
 |---|---|
 | `.github/workflows/validate-scaffold.yaml` | Renders `deploy/` (`kubectl kustomize`), **schema-validates** every resource with `kubeconform`, and applies the live Platform/shared Kyverno policies. It gates template PRs and rechecks upstream admission drift every Monday at 06:17 UTC (or on manual dispatch); an inline structural guard pins those triggers and their path to the policy evaluation. The workflow no-ops in tenants and is scaffold-time only |
 | `scripts/rename-placeholders.sh` (+ its test) | One-shot rename of the placeholder app to your tenant name |
+| `scripts/agent-instructions.test.sh` | Fails closed if the one-time agent scaffold loses its ownership, bot, external-code, exact-head review, or user-path evaluation boundaries |
 
 **Yours (list these in `.templatesyncignore`):**
 
@@ -79,6 +80,7 @@ deploy/
 # template-sync never re-introduces it after you delete it.
 scripts/rename-placeholders.sh
 scripts/rename-placeholders.test.sh
+scripts/agent-instructions.test.sh
 .github/workflows/validate-scaffold.yaml
 ```
 
@@ -106,5 +108,6 @@ only artifacts from this trusted workflow are reconciled.
 ```sh
 kubectl kustomize deploy/                              # manifests build
 sh scripts/rename-placeholders.test.sh                # onboarding contract
+sh scripts/agent-instructions.test.sh                 # agent safety contract
 actionlint .github/workflows/*                         # workflows parse
 ```

@@ -15,14 +15,16 @@ permissions: {}
 # Template-repo-only scaffold-integrity gate. The deploy/ Kustomize manifests are
 # this template's core deliverable — every new tenant inherits them — so a PR that
 # breaks the kustomization (a renamed/removed resource, a YAML error) must not
-# merge green and ship broken manifests downstream. Two layers run here:
+# merge green and ship broken scaffolding downstream. Three layers run here:
 #   1. schema-validate the deploy/ manifests (a typo'd CRD field that renders
 #      without complaint must fail loudly), and
 #   2. exercise scripts/rename-placeholders.sh — the onboarding script every new
 #      tenant runs first; a botched sed address (a missed file, a corrupted label
 #      KEY, a double-renamed CNPG `-app` suffix) would otherwise ship broken to
 #      every tenant while the manifest validation above — which only ever sees the
-#      UNrenamed scaffold — stays green.
+#      UNrenamed scaffold — stays green, and
+#   3. pin the agent-maintenance safety boundaries that every new tenant copies
+#      once and then owns outside template sync.
 # This job runs ONLY in the template repo; it no-ops in tenants created from it
 # (the guard below is false there), mirroring how cd.yaml/release.yaml run only in
 # tenants. Tenants replace deploy/ with their own app and validate it via their
@@ -195,6 +197,10 @@ jobs:
         # it ships to every tenant). kubectl is preinstalled, so the test's
         # post-rename `kubectl kustomize` build assertion runs here too.
         run: sh scripts/rename-placeholders.test.sh
+      - name: 🤖 Validate scaffolded agent instructions
+        # These files become tenant-owned immediately after creation, so a stale
+        # trust or promotion rule cannot be repaired by template sync later.
+        run: sh scripts/agent-instructions.test.sh
 
   # Platform admissibility gate (#71, epic #6 theme 4): the scaffold's promise is
   # "admissible on day one", so apply the platform's LIVE Kyverno admission policy
