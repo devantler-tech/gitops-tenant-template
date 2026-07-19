@@ -42,6 +42,7 @@ Dockerfile
 # carries them can delete them and they stay gone.
 scripts/rename-placeholders.sh
 scripts/rename-placeholders.test.sh
+scripts/agent-instructions.test.sh
 .github/workflows/validate-scaffold.yaml
 
 # --- This ignore-list itself (the tenant curates its own ownership) ---
