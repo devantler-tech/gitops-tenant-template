@@ -74,6 +74,37 @@ jobs:
             fi
           }
 
+          secretstore_contract='
+            .jobs.admissibility.steps
+            | map(select(
+                .id == "apply-admission-policies"
+                and (.run | test("restrict-tenant-secret-stores"))
+                and (.run | test("externalsecret-no-clustersecretstore"))
+                and (.run | test("app.kubernetes.io/managed-by: ksail"))
+                and (.run | test("--values-file tenant-values.yaml"))
+                and (.run | test("--userinfo tenant-user-info.yaml"))
+                and (.run | test("unmanaged-values.yaml"))
+                and (.run | test("platform-user-info.yaml"))
+                and (.run | test("ClusterSecretStore"))
+                and (.run | test("expect_secretstore_denied"))
+                and (.run | test("expect_secretstore_allowed"))
+              ))
+            | length == 1
+          '
+
+          assert_secretstore_mutant_rejected() {
+            description=$1
+            mutation=$2
+            mutant=$(mktemp)
+            yq eval "${mutation}" "${workflow}" > "${mutant}"
+            if yq eval -e "${secretstore_contract}" "${mutant}" >/dev/null; then
+              echo "::error::SecretStore contract accepted mutant: ${description}"
+              rm -f "${mutant}"
+              exit 1
+            fi
+            rm -f "${mutant}"
+          }
+
           assert_yaml "pull requests to main must stay covered" \
             '.["on"].pull_request.branches | (length == 1 and .[0] == "main")'
           assert_yaml "the live-policy drift gate must run weekly" \
@@ -129,6 +160,28 @@ jobs:
           '
           assert_yaml "admissibility must fail closed" \
             '.jobs.admissibility | has("continue-on-error") | not'
+          assert_yaml "tenant SecretStore admission must stay context- and mutation-proved" \
+            "${secretstore_contract}"
+
+          admission_run='(.jobs.admissibility.steps[] | select(
+            .id == "apply-admission-policies"
+          ).run)'
+          assert_secretstore_mutant_rejected "managed namespace context removed" \
+            "${admission_run} |= sub(\"app.kubernetes.io/managed-by: ksail\"; \"\")"
+          assert_secretstore_mutant_rejected "tenant values flag removed" \
+            "${admission_run} |= sub(\"--values-file tenant-values.yaml\"; \"\")"
+          assert_secretstore_mutant_rejected "tenant user info removed" \
+            "${admission_run} |= sub(\"--userinfo tenant-user-info.yaml\"; \"\")"
+          assert_secretstore_mutant_rejected "named policy removed" \
+            "${admission_run} |= sub(\"restrict-tenant-secret-stores\"; \"\")"
+          assert_secretstore_mutant_rejected "named rule removed" \
+            "${admission_run} |= sub(\"externalsecret-no-clustersecretstore\"; \"\")"
+          assert_secretstore_mutant_rejected "security mutation removed" \
+            "${admission_run} |= sub(\"ClusterSecretStore\"; \"\")"
+          assert_secretstore_mutant_rejected "denial assertion removed" \
+            "${admission_run} |= sub(\"expect_secretstore_denied\"; \"\")"
+          assert_secretstore_mutant_rejected "boundary controls removed" \
+            "${admission_run} |= sub(\"unmanaged-values.yaml\"; \"\") | sub(\"platform-user-info.yaml\"; \"\")"
       - name: ♻️ Cache CRD schemas
         # Persist the schemas kubeconform downloads from the catalog, keyed on the
         # pinned ref. A cache hit makes the validate step network-free (no fetch at
