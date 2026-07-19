@@ -63,6 +63,13 @@ validate_contract() {
 		"Self-promote only when" "$agent_contract_file"
 	require_literal "the complete hygiene pentad must remain required" \
 		"complete hygiene pentad" "$agent_contract_file"
+	require_literal "threads and review-body findings must remain clear" \
+		"zero unresolved threads and current review-body findings" \
+		"$agent_contract_file"
+	require_literal "conflicts and base lag must remain clear" \
+		"no conflict or base lag" "$agent_contract_file"
+	require_literal "the supported pre-merge gate must remain required" \
+		"supported CodeRabbit pre-merge check" "$agent_contract_file"
 	require_literal "promotion must bind the exact current head" \
 		"exact current head" "$agent_contract_file"
 	require_literal "promotion must require a real user-path evaluation" \
@@ -112,12 +119,12 @@ run_mutation() {
 			>> "$mutation_dir/AGENTS.md"
 		;;
 	remove-exact-head)
-		sed 's/exact current head/current branch/' \
+		sed 's/\*\*exact$/\*\*branch/' \
 			"$mutation_dir/AGENTS.md" > "$mutation_dir/AGENTS.tmp"
 		mv "$mutation_dir/AGENTS.tmp" "$mutation_dir/AGENTS.md"
 		;;
 	remove-user-path)
-		sed 's/has been tried/has been reviewed/' \
+		sed 's/must also be tried/must only be reviewed/' \
 			"$mutation_dir/AGENTS.md" > "$mutation_dir/AGENTS.tmp"
 		mv "$mutation_dir/AGENTS.tmp" "$mutation_dir/AGENTS.md"
 		;;
