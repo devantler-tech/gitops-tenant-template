@@ -15,7 +15,7 @@ permissions: {}
 # Template-repo-only scaffold-integrity gate. The deploy/ Kustomize manifests are
 # this template's core deliverable — every new tenant inherits them — so a PR that
 # breaks the kustomization (a renamed/removed resource, a YAML error) must not
-# merge green and ship broken scaffolding downstream. Three layers run here:
+# merge green and ship broken scaffolding downstream. Four layers run here:
 #   1. schema-validate the deploy/ manifests (a typo'd CRD field that renders
 #      without complaint must fail loudly), and
 #   2. exercise scripts/rename-placeholders.sh — the onboarding script every new
@@ -24,7 +24,9 @@ permissions: {}
 #      every tenant while the manifest validation above — which only ever sees the
 #      UNrenamed scaffold — stays green, and
 #   3. pin the agent-maintenance safety boundaries that every new tenant copies
-#      once and then owns outside template sync.
+#      once and then owns outside template sync, and
+#   4. exercise the rendered workload against Platform's live tenant RBAC so a
+#      role drift cannot turn green onboarding into a forbidden reconciliation.
 # This job runs ONLY in the template repo; it no-ops in tenants created from it
 # (the guard below is false there), mirroring how cd.yaml/release.yaml run only in
 # tenants. Tenants replace deploy/ with their own app and validate it via their
@@ -256,6 +258,8 @@ jobs:
         run: sh scripts/agent-instructions.test.sh
       - name: 🛡️ Validate Pod Security admission contract
         run: sh scripts/pod-security-admission-contract.test.sh
+      - name: 🔐 Validate tenant RBAC contract
+        run: sh scripts/tenant-rbac-contract.test.sh
 
   # Platform admissibility gate (#71, epic #6 theme 4): the scaffold's promise is
   # "admissible on day one", so apply the platform's LIVE Kyverno admission policy
@@ -665,12 +669,13 @@ jobs:
           echo "selectors verified equivalent (platform request-derived In; scaffold matchLabels ${scaffold_app})"
 
   # The offline Kyverno job above cannot exercise namespace-label Pod Security
-  # Admission. Derive the Pod that the rendered Deployment creates and submit it
-  # to a real, pinned Kubernetes API, so a tenant cannot ship a restricted-
-  # baseline regression behind green schema and policy checks. This stays
-  # template-only like the other scaffold gates.
+  # Admission or Kubernetes authorization. In one real, pinned API, derive and
+  # admit the Pod that the rendered Deployment creates, then bind Platform's
+  # live aggregate tenant role and prove the reconciliation identity can manage
+  # every rendered kind without gaining cluster or interactive privileges. This
+  # stays template-only like the other scaffold gates.
   pod-security-admission:
-    name: Pod Security Admission
+    name: Pod Security and tenant RBAC
     if: github.repository == 'devantler-tech/gitops-tenant-template'
     runs-on: ubuntu-latest
     permissions:
@@ -688,7 +693,14 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - name: 📥 Checkout Platform tenant roles (live main — drift is the signal)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: devantler-tech/platform
+          path: .platform
+          sparse-checkout: k8s/bases/infrastructure/cluster-roles
+          persist-credentials: false
       - name: 📦 Install pinned Kind
         run: GOTOOLCHAIN=local go install "sigs.k8s.io/kind@${KIND_VERSION}"
-      - name: 🛡️ Exercise restricted admission
+      - name: 🛡️ Exercise restricted admission and tenant RBAC
         run: sh scripts/pod-security-admission.test.sh
