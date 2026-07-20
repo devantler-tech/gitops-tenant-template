@@ -6,7 +6,6 @@ script_dir=$(CDPATH='' cd -P -- "$(dirname -- "$0")" && pwd)
 repo_root=$(dirname -- "$script_dir")
 workflow=$repo_root/.github/workflows/validate-scaffold.yaml
 runtime=$repo_root/scripts/platform-tenant-envelope.test.sh
-secretstore_runtime=$repo_root/.github/workflows/validate-scaffold.yaml
 pod_security_runtime=$repo_root/scripts/pod-security-admission.test.sh
 rbac_runtime=$repo_root/scripts/tenant-rbac.test.sh
 readme=$repo_root/README.md
@@ -89,8 +88,14 @@ validate_contract() {
 	# The three existing gates model the same context independently. Keep their
 	# shared identity assumptions explicit so they cannot silently diverge from
 	# the Platform envelope that creates the namespace and reconciler.
-	grep -Fq 'app.kubernetes.io/managed-by' "$secretstore_runtime" ||
-		fail "SecretStore admission no longer models the managed namespace label"
+	# shellcheck disable=SC2016
+	yq eval -e '
+		[.jobs.admissibility.steps[] | select(
+			.id == "apply-admission-policies"
+			and ((.run | split("app.kubernetes.io/managed-by") | length) == 3)
+		)] | length == 1
+	' "$workflow_file" >/dev/null ||
+		fail "SecretStore admission no longer models both managed namespace contexts"
 	grep -Fq 'pod-security.kubernetes.io/enforce' "$pod_security_file" ||
 		fail "Pod Security runtime no longer models the restricted namespace label"
 	grep -Fq 'tenant-edit' "$rbac_file" ||
@@ -189,15 +194,17 @@ run_mutation "live envelope invocation removed" \
 	'del(.jobs.admissibility.steps[] | select(.run == "sh scripts/platform-tenant-envelope.test.sh"))' ''
 run_mutation "contract invocation removed" \
 	'del(.jobs."validate-scaffold".steps[] | select(.run == "sh scripts/platform-tenant-envelope-contract.test.sh"))' ''
+run_mutation "SecretStore managed namespace context removed" \
+	'(.jobs.admissibility.steps[] | select(.id == "apply-admission-policies").run) |= sub("app.kubernetes.io/managed-by"; "removed-label")' ''
 run_mutation "SOPS variant validation removed" '' '/kustomizationSops/d'
 run_mutation "target namespace validation removed" '' '/targetNamespace/d'
-run_mutation "managed namespace model removed" '' '' '' '' \
+run_mutation "README tenant-envelope runtime marker removed" '' '' '' '' \
 	'/^scripts\/platform-tenant-envelope\.test\.sh$/d'
-run_mutation "actual template-owned marker removed" '' '' '' '' '' \
+run_mutation ".templatesyncignore tenant-envelope runtime marker removed" '' '' '' '' '' \
 	'/^scripts\/platform-tenant-envelope\.test\.sh$/d'
 run_mutation "Pod Security context removed" '' '' \
 	'/pod-security\.kubernetes\.io\/enforce/d'
 run_mutation "RBAC context removed" '' '' '' \
 	'/tenant-edit/d'
 
-echo "PASS: Platform tenant-envelope contract (happy path + 9 safety mutations)"
+echo "PASS: Platform tenant-envelope contract (happy path + 10 safety mutations)"
