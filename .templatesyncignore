@@ -47,6 +47,8 @@ scripts/pod-security-admission.test.sh
 scripts/pod-security-admission-contract.test.sh
 scripts/tenant-rbac.test.sh
 scripts/tenant-rbac-contract.test.sh
+scripts/platform-tenant-envelope.test.sh
+scripts/platform-tenant-envelope-contract.test.sh
 .github/workflows/validate-scaffold.yaml
 
 # --- This ignore-list itself (the tenant curates its own ownership) ---

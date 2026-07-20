@@ -26,7 +26,11 @@ permissions: {}
 #   3. pin the agent-maintenance safety boundaries that every new tenant copies
 #      once and then owns outside template sync, and
 #   4. exercise the rendered workload against Platform's live tenant RBAC so a
-#      role drift cannot turn green onboarding into a forbidden reconciliation.
+#      role drift cannot turn green onboarding into a forbidden reconciliation,
+#      and
+#   5. bind those workload-level models to Platform's live tenant envelope — the
+#      Namespace labels, tenant-edit binding, and Flux impersonation/targeting
+#      relationships supplied by both the KRO Tenant and a manual registration.
 # This job runs ONLY in the template repo; it no-ops in tenants created from it
 # (the guard below is false there), mirroring how cd.yaml/release.yaml run only in
 # tenants. Tenants replace deploy/ with their own app and validate it via their
@@ -260,6 +264,8 @@ jobs:
         run: sh scripts/pod-security-admission-contract.test.sh
       - name: 🔐 Validate tenant RBAC contract
         run: sh scripts/tenant-rbac-contract.test.sh
+      - name: 🧭 Validate Platform tenant-envelope contract
+        run: sh scripts/platform-tenant-envelope-contract.test.sh
 
   # Platform admissibility gate (#71, epic #6 theme 4): the scaffold's promise is
   # "admissible on day one", so apply the platform's LIVE Kyverno admission policy
@@ -302,12 +308,15 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - name: 📥 Checkout platform policies (live main — drift is the signal)
+      - name: 📥 Checkout Platform contracts (live main — drift is the signal)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: devantler-tech/platform
           path: .platform
-          sparse-checkout: k8s/bases/infrastructure/cluster-policies
+          sparse-checkout: |
+            k8s/bases/infrastructure/cluster-policies
+            k8s/bases/infrastructure/resource-graph-definitions/tenant
+            k8s/bases/apps/ascoachingogvaner
           persist-credentials: false
       - name: 📥 Checkout shared kyverno-policies (live main)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -315,6 +324,8 @@ jobs:
           repository: devantler-tech/kyverno-policies
           path: .shared-policies
           persist-credentials: false
+      - name: 🧭 Validate Platform tenant envelope
+        run: sh scripts/platform-tenant-envelope.test.sh
       - name: 🛂 Apply admission policies to the rendered scaffold
         id: apply-admission-policies
         run: |
