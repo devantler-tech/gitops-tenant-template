@@ -69,8 +69,10 @@ validate_contract() {
 		'service-account.yaml' \
 		'role-binding-ascoachingogvaner.yaml' \
 		'flux-kustomization.yaml' \
+		'kustomization.yaml' \
 		'tenantNamespace' \
 		'kustomizationSops' \
+		'includeWhen' \
 		'app.kubernetes.io/managed-by' \
 		'pod-security.kubernetes.io/enforce' \
 		'pod-security.kubernetes.io/enforce-version' \

@@ -19,13 +19,15 @@ validate_platform() {
 	manual_service_account=$manual_root/service-account.yaml
 	manual_role_binding=$manual_root/role-binding-ascoachingogvaner.yaml
 	manual_kustomization=$manual_root/flux-kustomization.yaml
+	manual_inventory=$manual_root/kustomization.yaml
 
 	for required_file in \
 		"$rgd" \
 		"$manual_namespace" \
 		"$manual_service_account" \
 		"$manual_role_binding" \
-		"$manual_kustomization"
+		"$manual_kustomization" \
+		"$manual_inventory"
 	do
 		[ -f "$required_file" ] || fail "Platform tenant-envelope source is missing: $required_file"
 	done
@@ -35,8 +37,10 @@ validate_platform() {
 		(.spec.resources[] | select(.id == "tenantNamespace").template) as $namespace
 		| (.spec.resources[] | select(.id == "serviceAccount").template) as $serviceAccount
 		| (.spec.resources[] | select(.id == "roleBinding").template) as $roleBinding
-		| (.spec.resources[] | select(.id == "kustomization").template) as $kustomization
-		| (.spec.resources[] | select(.id == "kustomizationSops").template) as $kustomizationSops
+		| (.spec.resources[] | select(.id == "kustomization")) as $kustomizationResource
+		| (.spec.resources[] | select(.id == "kustomizationSops")) as $kustomizationSopsResource
+		| $kustomizationResource.template as $kustomization
+		| $kustomizationSopsResource.template as $kustomizationSops
 		| ($namespace.kind == "Namespace"
 		and $namespace.metadata.name == "${schema.spec.name}"
 		and $namespace.metadata.labels."app.kubernetes.io/managed-by" == "ksail"
@@ -57,9 +61,13 @@ validate_platform() {
 		and $roleBinding.subjects[0].kind == "ServiceAccount"
 		and $roleBinding.subjects[0].name == "${serviceAccount.metadata.name}"
 		and $roleBinding.subjects[0].namespace == "${tenantNamespace.metadata.name}"
+		and (($kustomizationResource.includeWhen | join("|")) == "${!schema.spec.sops}")
+		and $kustomization.kind == "Kustomization"
 		and $kustomization.metadata.namespace == "${tenantNamespace.metadata.name}"
 		and $kustomization.spec.serviceAccountName == "${serviceAccount.metadata.name}"
 		and $kustomization.spec.targetNamespace == "${tenantNamespace.metadata.name}"
+		and (($kustomizationSopsResource.includeWhen | join("|")) == "${schema.spec.sops}")
+		and $kustomizationSops.kind == "Kustomization"
 		and $kustomizationSops.metadata.namespace == "${tenantNamespace.metadata.name}"
 		and $kustomizationSops.spec.serviceAccountName == "${serviceAccount.metadata.name}"
 		and $kustomizationSops.spec.targetNamespace == "${tenantNamespace.metadata.name}")
@@ -71,7 +79,8 @@ validate_platform() {
 
 	# shellcheck disable=SC2016
 	yq eval -e '
-		.metadata.name == strenv(tenant_name)
+		.kind == "Namespace"
+		and .metadata.name == strenv(tenant_name)
 		and .metadata.labels."app.kubernetes.io/managed-by" == "ksail"
 		and .metadata.labels."pod-security.kubernetes.io/enforce" == "restricted"
 		and .metadata.labels."pod-security.kubernetes.io/enforce-version" == "latest"
@@ -109,6 +118,14 @@ validate_platform() {
 		and .spec.serviceAccountName == strenv(tenant_name)
 		and .spec.targetNamespace == strenv(tenant_name)
 	' "$manual_kustomization" >/dev/null || fail "manual Platform tenant Flux Kustomization no longer impersonates and targets its namespace"
+
+	yq eval -e '
+		.kind == "Kustomization"
+		and ([.resources[] | select(. == "namespace.yaml")] | length) == 1
+		and ([.resources[] | select(. == "service-account.yaml")] | length) == 1
+		and ([.resources[] | select(. == "role-binding-ascoachingogvaner.yaml")] | length) == 1
+		and ([.resources[] | select(. == "flux-kustomization.yaml")] | length) == 1
+	' "$manual_inventory" >/dev/null || fail "manual Platform tenant inventory no longer applies every validated envelope resource"
 }
 
 if [ "${1:-}" = "--validate" ]; then
@@ -163,15 +180,25 @@ run_mutation "KRO SOPS reconciler identity removed" "$rgd_path" \
 	'del(.spec.resources[] | select(.id == "kustomizationSops").template.spec.serviceAccountName)'
 run_mutation "KRO SOPS target namespace removed" "$rgd_path" \
 	'del(.spec.resources[] | select(.id == "kustomizationSops").template.spec.targetNamespace)'
+run_mutation "KRO reconciler kind changed" "$rgd_path" \
+	'(.spec.resources[] | select(.id == "kustomization").template.kind) = "ConfigMap"'
+# This is the literal KRO CEL expression written into the mutant.
+# shellcheck disable=SC2016
+run_mutation "KRO activation predicates overlap" "$rgd_path" \
+	'(.spec.resources[] | select(.id == "kustomization").includeWhen) = ["${schema.spec.sops}"]'
 run_mutation "manual managed-by label changed" "$manual_path/namespace.yaml" \
 	'.metadata.labels."app.kubernetes.io/managed-by" = "manual"'
 run_mutation "manual Pod Security level weakened" "$manual_path/namespace.yaml" \
 	'.metadata.labels."pod-security.kubernetes.io/enforce" = "baseline"'
+run_mutation "manual Namespace kind changed" "$manual_path/namespace.yaml" \
+	'.kind = "ConfigMap"'
 run_mutation "manual tenant-edit binding changed" "$manual_path/role-binding-ascoachingogvaner.yaml" \
 	'.roleRef.name = "edit"'
 run_mutation "manual reconciler identity removed" "$manual_path/flux-kustomization.yaml" \
 	'del(.spec.serviceAccountName)'
 run_mutation "manual target namespace removed" "$manual_path/flux-kustomization.yaml" \
 	'del(.spec.targetNamespace)'
+run_mutation "manual Namespace removed from inventory" "$manual_path/kustomization.yaml" \
+	'.resources -= ["namespace.yaml"]'
 
-echo "PASS: Platform tenant envelope (KRO + manual registration + 12 safety mutations)"
+echo "PASS: Platform tenant envelope (KRO + manual registration + 16 safety mutations)"
