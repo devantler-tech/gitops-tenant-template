@@ -66,6 +66,7 @@ validate_contract() {
 		'fromEntities' \
 		'toEntities' \
 		'kube-apiserver' \
+		'request.object.metadata.name' \
 		'UDP' \
 		'TCP' \
 		'validate_network_floor' \

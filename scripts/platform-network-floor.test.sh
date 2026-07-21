@@ -45,6 +45,7 @@ validate_network_floor() {
 			.generate.apiVersion == "cilium.io/v2",
 			.generate.kind == "CiliumNetworkPolicy",
 			.generate.name == "default-deny",
+			.generate.namespace == "{{request.object.metadata.name}}",
 			.generate.synchronize == true,
 			(.generate.data.spec.endpointSelector | keys | length) == 0,
 			.generate.data.spec.enableDefaultDeny.ingress == true,
@@ -65,6 +66,7 @@ validate_network_floor() {
 			.generate.apiVersion == "cilium.io/v2",
 			.generate.kind == "CiliumNetworkPolicy",
 			.generate.name == "allow-dns",
+			.generate.namespace == "{{request.object.metadata.name}}",
 			.generate.synchronize == true,
 			(.generate.data.spec.endpointSelector | keys | length) == 0,
 			.generate.data.spec.egress[0].toEndpoints[0].matchLabels."k8s:io.kubernetes.pod.namespace" == "kube-system",
@@ -82,6 +84,7 @@ validate_network_floor() {
 			.generate.apiVersion == "networking.k8s.io/v1",
 			.generate.kind == "NetworkPolicy",
 			.generate.name == "default-deny",
+			.generate.namespace == "{{request.object.metadata.name}}",
 			.generate.synchronize == true,
 			(.generate.data.spec.podSelector | keys | length) == 0,
 			(.generate.data.spec.policyTypes | [(length == 2), contains(["Ingress"]), contains(["Egress"])] | all),
@@ -155,6 +158,8 @@ run_platform_mutation "matched ingress deny introduced" \
 	'(.spec.rules[] | select(.name == "generate-default-deny").generate.data.spec.ingressDeny[0].fromEntities) = ["all"]'
 run_platform_mutation "default-deny generation removed" \
 	'del(.spec.rules[] | select(.name == "generate-default-deny"))'
+run_platform_mutation "tenant namespace target removed" \
+	'del(.spec.rules[] | select(.name == "generate-default-deny").generate.namespace)'
 run_platform_mutation "generated DNS TCP allowance removed" \
 	'del(.spec.rules[] | select(.name == "generate-allow-dns").generate.data.spec.egress[0].toPorts[0].ports[] | select(.protocol == "TCP"))'
 run_platform_mutation "standard default-deny kind changed" \
@@ -168,4 +173,4 @@ run_scaffold_mutation "Kubernetes API egress allowance removed" \
 run_scaffold_mutation "tenant DNS UDP allowance removed" \
 	'del(.spec.egress[] | select(.toEndpoints[0].matchLabels."k8s-app" == "kube-dns").toPorts[0].ports[] | select(.protocol == "UDP"))'
 
-echo "PASS: Platform network floor (generated policies + tenant allows + 8 safety mutations)"
+echo "PASS: Platform network floor (generated policies + tenant allows + 9 safety mutations)"
