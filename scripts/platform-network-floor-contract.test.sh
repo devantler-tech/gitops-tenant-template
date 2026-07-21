@@ -33,6 +33,7 @@ validate_contract() {
 				.uses == "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
 				and .with.path == ".platform"
 				and .with."persist-credentials" == false
+				and (.with | has("ref") | not)
 				and ((.with."sparse-checkout" | split("\n") | map(select(. != "")))
 					| contains(["k8s/bases/infrastructure/cluster-policies"]))
 			)
@@ -161,6 +162,8 @@ run_mutation "contract invocation removed" \
 	'del(.jobs."validate-scaffold".steps[] | select(.run == "sh scripts/platform-network-floor-contract.test.sh"))' ''
 run_mutation "Platform policy checkout removed" \
 	'(.jobs.admissibility.steps[] | select(.with.repository == "devantler-tech/platform").with."sparse-checkout") |= sub("k8s/bases/infrastructure/cluster-policies\\n"; "")' ''
+run_mutation "Platform policy checkout pinned away from live main" \
+	'(.jobs.admissibility.steps[] | select(.with.repository == "devantler-tech/platform").with.ref) = "stale-ref"' ''
 run_mutation "deny-shape validation removed" '' '/ingressDeny/d'
 run_mutation "Platform mutation controls removed" '' '/run_platform_mutation/d'
 run_mutation "rendered scaffold validation removed" '' '/kubectl kustomize/d'
@@ -169,4 +172,4 @@ run_mutation "README runtime ownership marker removed" '' '' \
 run_mutation ".templatesyncignore runtime marker removed" '' '' '' \
 	'/^scripts\/platform-network-floor\.test\.sh$/d'
 
-echo "PASS: Platform network-floor contract (happy path + 9 safety mutations)"
+echo "PASS: Platform network-floor contract (happy path + 10 safety mutations)"
