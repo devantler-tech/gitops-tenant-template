@@ -9,7 +9,7 @@
 # manifests but never runs the rename, so a botched sed address would pass green.
 # This test pins the script's real, subtle behaviour:
 #   * REPLACE_ME values (the image and the OpenBao KV path) are repointed,
-#   * every `app`-as-a-VALUE is renamed (resource names, label values, hostname,
+#   * every `app`-as-a-VALUE is renamed (resource names, label values, hostnames,
 #     the CNPG database/owner), while the `app.kubernetes.io/name` label *KEY* is
 #     left intact (only its value changes),
 #   * CloudNativePG's literal `-app` Secret suffix is preserved (`app-db-app`
@@ -70,6 +70,13 @@ printf '%s\n' \
 	'  name: "replace-me"' > "$scope_fixture"
 scope_before="$(cat "$scope_fixture")"
 
+# A tenant may add arbitrary custom hostnames beside the two Platform domains.
+# The helper must leave those values byte-identical.
+custom_hostname="tenant.example.com"
+yq eval ".spec.hostnames += [\"${custom_hostname}\"]" \
+	"$deploy/httproute.yaml" > "$deploy/httproute-with-custom.yaml"
+mv "$deploy/httproute-with-custom.yaml" "$deploy/httproute.yaml"
+
 # --- Happy path ---------------------------------------------------------------
 "$script" "$NAME" >/dev/null
 
@@ -88,6 +95,10 @@ printf '%s\n' "$all" | grep -qE ': app$' &&
 	fail "a bare ': app' value survived the rename"
 printf '%s\n' "$all" | grep -qF "${NAME}.platform.lan" ||
 	fail "HTTPRoute hostname app.platform.lan not renamed"
+printf '%s\n' "$all" | grep -qF "${NAME}.platform.devantler.tech" ||
+	fail "HTTPRoute hostname app.platform.devantler.tech not renamed"
+printf '%s\n' "$all" | grep -qF "${custom_hostname}" ||
+	fail "custom HTTPRoute hostname was changed by the Platform-domain rename"
 
 # 3) The `app.kubernetes.io/name` label KEY is preserved; only its VALUE changed.
 printf '%s\n' "$all" | grep -qF "app.kubernetes.io/name: ${NAME}" ||
@@ -160,6 +171,8 @@ caller_before="$(cat "$caller_repo"/deploy/*.yaml)"
 	fail "cross-checkout invocation mutated the CALLER's deploy/ (#61)"
 cat "$other"/deploy/*.yaml | grep -qF "cross-tenant.platform.lan" ||
 	fail "cross-checkout invocation did not rename the scaffold owning the script (#61)"
+cat "$other"/deploy/*.yaml | grep -qF "cross-tenant.platform.devantler.tech" ||
+	fail "cross-checkout invocation did not rename the production hostname (#99)"
 
 # 10) The renamed scaffold still builds (CI has kubectl preinstalled; skip locally
 #    if it is absent so the text assertions above stay runnable everywhere).
