@@ -546,7 +546,7 @@ run_hostname_mutation() {
 		rm -f "$mutant_platform_root/$missing_source"
 	fi
 
-	if validate_platform_route_hostnames "$mutant_platform_root" "$mutant_route" >/dev/null 2>&1; then
+	if (validate_platform_route_hostnames "$mutant_platform_root" "$mutant_route") >/dev/null 2>&1; then
 		fail "mutation passed: $description"
 	fi
 }
