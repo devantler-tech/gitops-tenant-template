@@ -39,7 +39,9 @@ validate_contract() {
 				and ((.with."sparse-checkout" | split("\n") | join("|")) ==
 					"k8s/bases/infrastructure/cluster-policies|" +
 					"k8s/bases/infrastructure/resource-graph-definitions/tenant|" +
-					"k8s/bases/apps/ascoachingogvaner|")
+					"k8s/bases/apps/ascoachingogvaner|" +
+					"k8s/clusters/local/bootstrap/config-map.yaml|" +
+					"k8s/clusters/prod/bootstrap/config-map.yaml|")
 			)
 		] | length == 1
 	' "$workflow_file" >/dev/null ||

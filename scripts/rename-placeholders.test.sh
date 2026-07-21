@@ -72,7 +72,9 @@ scope_before="$(cat "$scope_fixture")"
 
 # A tenant may add arbitrary custom hostnames beside the two Platform domains.
 # The helper must leave those values byte-identical.
-custom_hostname="tenant.example.com"
+# Include the reserved token in an unrelated hostname so a future broad
+# replacement (for example, replacing every "app") is rejected by this test.
+custom_hostname="custom-app.example.com"
 yq eval ".spec.hostnames += [\"${custom_hostname}\"]" \
 	"$deploy/httproute.yaml" > "$deploy/httproute-with-custom.yaml"
 mv "$deploy/httproute-with-custom.yaml" "$deploy/httproute.yaml"

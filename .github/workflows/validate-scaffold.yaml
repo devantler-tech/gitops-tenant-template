@@ -322,6 +322,8 @@ jobs:
             k8s/bases/infrastructure/cluster-policies
             k8s/bases/infrastructure/resource-graph-definitions/tenant
             k8s/bases/apps/ascoachingogvaner
+            k8s/clusters/local/bootstrap/config-map.yaml
+            k8s/clusters/prod/bootstrap/config-map.yaml
           persist-credentials: false
       - name: 📥 Checkout shared kyverno-policies (live main)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

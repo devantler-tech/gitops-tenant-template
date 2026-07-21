@@ -11,6 +11,48 @@ fail() {
 	exit 1
 }
 
+# Bind the scaffold's two default hostnames to Platform's live local and
+# production domains. Custom domains are added after adoption; the template
+# baseline deliberately starts with exactly these two paved-road values.
+validate_platform_route_hostnames() {
+	platform_checkout=$1
+	http_route=$2
+	local_values=$platform_checkout/k8s/clusters/local/bootstrap/config-map.yaml
+	prod_values=$platform_checkout/k8s/clusters/prod/bootstrap/config-map.yaml
+
+	[ -f "$local_values" ] || fail "Platform local domain source is missing: $local_values"
+	[ -f "$prod_values" ] || fail "Platform production domain source is missing: $prod_values"
+
+	for cluster_domain_pair in "local:$local_values" "prod:$prod_values"; do
+		cluster_name=${cluster_domain_pair%%:*}
+		values_file=${cluster_domain_pair#*:}
+		export cluster_name
+		yq eval -e '
+			.kind == "ConfigMap"
+			and .metadata.name == "variables-cluster"
+			and .metadata.namespace == "flux-system"
+			and .data.cluster_name == strenv(cluster_name)
+			and (.data.domain | test("^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$"))
+		' "$values_file" >/dev/null ||
+			fail "Platform $cluster_name domain source is incomplete"
+	done
+
+	local_domain=$(yq eval -r '.data.domain' "$local_values")
+	prod_domain=$(yq eval -r '.data.domain' "$prod_values")
+	[ "$local_domain" != "$prod_domain" ] ||
+		fail "Platform local and production domains must remain distinct"
+	export local_domain prod_domain
+
+	yq eval -e '
+		.kind == "HTTPRoute"
+		and .metadata.name == "app"
+		and (.spec.hostnames | length) == 2
+		and (.spec.hostnames | contains(["app." + strenv(local_domain)]))
+		and (.spec.hostnames | contains(["app." + strenv(prod_domain)]))
+	' "$http_route" >/dev/null ||
+		fail "rendered tenant HTTPRoute no longer carries both live Platform domains"
+}
+
 validate_network_floor() {
 	platform_policy=$1
 	scaffold_policy=$2
@@ -179,9 +221,6 @@ validate_network_floor() {
 			.spec.parentRefs[0].name == "platform",
 			.spec.parentRefs[0].namespace == "kube-system",
 			.spec.parentRefs[0].sectionName == "https",
-			(.spec.hostnames | length) == 2,
-			(.spec.hostnames | contains(["app.platform.lan"])),
-			(.spec.hostnames | contains(["app.platform.devantler.tech"])),
 			(.spec.rules | length) == 1,
 			(.spec.rules[0] | keys | length) == 1,
 			(.spec.rules[0].backendRefs | length) == 1,
@@ -390,6 +429,7 @@ service=$rendered_root/service.yaml
 deployment=$rendered_root/deployment.yaml
 http_route=$rendered_root/http-route.yaml
 validate_network_floor "$platform_policy" "$scaffold_policy" "$service" "$deployment" "$http_route"
+validate_platform_route_hostnames "$platform_root" "$http_route"
 
 platform_baseline=$mutation_dir/platform.yaml
 scaffold_baseline=$mutation_dir/scaffold.yaml
@@ -467,7 +507,46 @@ run_http_route_mutation() {
 		"$scaffold_baseline" \
 		"$service_baseline" \
 		"$deployment_baseline" \
-		"$mutation_dir/http-route-mutant.yaml") >/dev/null 2>&1; then
+		"$mutation_dir/http-route-mutant.yaml" &&
+		validate_platform_route_hostnames \
+			"$platform_root" \
+			"$mutation_dir/http-route-mutant.yaml") >/dev/null 2>&1; then
+		fail "mutation passed: $description"
+	fi
+}
+
+run_hostname_mutation() {
+	description=$1
+	local_mutation=$2
+	prod_mutation=$3
+	route_mutation=$4
+	missing_source=${5:-}
+	mutant_platform_root=$mutation_dir/hostname-platform-mutant
+	mutant_local=$mutant_platform_root/k8s/clusters/local/bootstrap/config-map.yaml
+	mutant_prod=$mutant_platform_root/k8s/clusters/prod/bootstrap/config-map.yaml
+	mutant_route=$mutation_dir/hostname-route-mutant.yaml
+
+	mkdir -p "$(dirname "$mutant_local")" "$(dirname "$mutant_prod")"
+	cp "$platform_root/k8s/clusters/local/bootstrap/config-map.yaml" "$mutant_local"
+	cp "$platform_root/k8s/clusters/prod/bootstrap/config-map.yaml" "$mutant_prod"
+	cp "$http_route_baseline" "$mutant_route"
+	if [ -n "$local_mutation" ]; then
+		yq eval "$local_mutation" "$mutant_local" > "$mutation_dir/local-domain-mutant.yaml"
+		mv "$mutation_dir/local-domain-mutant.yaml" "$mutant_local"
+	fi
+	if [ -n "$prod_mutation" ]; then
+		yq eval "$prod_mutation" "$mutant_prod" > "$mutation_dir/prod-domain-mutant.yaml"
+		mv "$mutation_dir/prod-domain-mutant.yaml" "$mutant_prod"
+	fi
+	if [ -n "$route_mutation" ]; then
+		yq eval "$route_mutation" "$mutant_route" > "$mutation_dir/hostname-route-mutant-next.yaml"
+		mv "$mutation_dir/hostname-route-mutant-next.yaml" "$mutant_route"
+	fi
+	if [ -n "$missing_source" ]; then
+		rm -f "$mutant_platform_root/$missing_source"
+	fi
+
+	if validate_platform_route_hostnames "$mutant_platform_root" "$mutant_route" >/dev/null 2>&1; then
 		fail "mutation passed: $description"
 	fi
 }
@@ -602,6 +681,16 @@ run_http_route_mutation "HTTPRoute detached from the Platform Gateway" \
 	'.spec.parentRefs[0].name = "other-gateway"'
 run_http_route_mutation "HTTPRoute hostname broadened to wildcard" \
 	'.spec.hostnames = ["*.platform.lan"]'
+run_hostname_mutation "local Platform hostname removed" '' '' \
+	'del(.spec.hostnames[] | select(. == "app.platform.lan"))'
+run_hostname_mutation "production Platform hostname removed" '' '' \
+	'del(.spec.hostnames[] | select(. == "app.platform.devantler.tech"))'
+run_hostname_mutation "production Platform hostname uses the wrong suffix" '' '' \
+	'(.spec.hostnames[] | select(. == "app.platform.devantler.tech")) = "app.platform.example.com"'
+run_hostname_mutation "local Platform domain source removed" '' '' '' \
+	'k8s/clusters/local/bootstrap/config-map.yaml'
+run_hostname_mutation "production Platform domain source removed" '' '' '' \
+	'k8s/clusters/prod/bootstrap/config-map.yaml'
 run_http_route_mutation "HTTPRoute parent changed from a Gateway" \
 	'.spec.parentRefs[0] *= {"group": "apps", "kind": "Deployment"}'
 run_http_route_mutation "HTTPRoute backend moved to another namespace" \
@@ -617,4 +706,4 @@ run_http_route_mutation "HTTPRoute backend identity and port split across differ
 run_rendered_scaffold_mutation "Kustomize patch removed rendered Gateway allowance" \
 	'.patches = [{"target": {"kind": "CiliumNetworkPolicy", "name": "app"}, "patch": "- op: remove\n  path: /spec/ingress/0"}]'
 
-echo "PASS: Platform network floor (generated policies + tenant allows + 43 safety mutations)"
+echo "PASS: Platform network floor (generated policies + tenant allows + live route domains + 48 safety mutations)"

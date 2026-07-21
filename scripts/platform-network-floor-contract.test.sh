@@ -35,7 +35,11 @@ validate_contract() {
 				and .with."persist-credentials" == false
 				and (.with | has("ref") | not)
 				and ((.with."sparse-checkout" | split("\n") | map(select(. != "")))
-					| contains(["k8s/bases/infrastructure/cluster-policies"]))
+					| contains([
+						"k8s/bases/infrastructure/cluster-policies",
+						"k8s/clusters/local/bootstrap/config-map.yaml",
+						"k8s/clusters/prod/bootstrap/config-map.yaml"
+					]))
 			)
 		] | length == 1
 	' "$workflow_file" >/dev/null ||
@@ -84,11 +88,21 @@ validate_contract() {
 		'run_platform_inventory_mutation' \
 		'run_additional_platform_policy_mutation' \
 		'run_scaffold_mutation' \
-		'run_rendered_scaffold_mutation'
+		'run_rendered_scaffold_mutation' \
+		'validate_platform_route_hostnames' \
+		'run_hostname_mutation' \
+		'k8s/clusters/local/bootstrap/config-map.yaml' \
+		'k8s/clusters/prod/bootstrap/config-map.yaml'
 	do
 		grep -Fq -- "$needle" "$runtime_file" ||
 			fail "Platform network-floor runtime lacks: $needle"
 	done
+
+	# Match the runtime's literal main-path invocation so an unused helper cannot
+	# make the structural contract pass while live domain drift is ignored.
+	# shellcheck disable=SC2016
+	[ "$(grep -Ec '^validate_platform_route_hostnames "\$platform_root" "\$http_route"$' "$runtime_file")" -eq 1 ] ||
+		fail "live Platform route-domain validation is not invoked exactly once"
 
 	owned_ignore_block=$(awk '
 		/^\*\*Yours \(list these in `\.templatesyncignore`\):\*\*$/ { found = 1; next }
@@ -169,6 +183,10 @@ run_mutation "contract invocation removed" \
 	'del(.jobs."validate-scaffold".steps[] | select(.run == "sh scripts/platform-network-floor-contract.test.sh"))' ''
 run_mutation "Platform policy checkout removed" \
 	'(.jobs.admissibility.steps[] | select(.with.repository == "devantler-tech/platform").with."sparse-checkout") |= sub("k8s/bases/infrastructure/cluster-policies\\n"; "")' ''
+run_mutation "Platform local domain checkout removed" \
+	'(.jobs.admissibility.steps[] | select(.with.repository == "devantler-tech/platform").with."sparse-checkout") |= sub("k8s/clusters/local/bootstrap/config-map.yaml\\n"; "")' ''
+run_mutation "Platform production domain checkout removed" \
+	'(.jobs.admissibility.steps[] | select(.with.repository == "devantler-tech/platform").with."sparse-checkout") |= sub("k8s/clusters/prod/bootstrap/config-map.yaml\\n"; "")' ''
 run_mutation "Platform policy checkout pinned away from live main" \
 	'(.jobs.admissibility.steps[] | select(.with.repository == "devantler-tech/platform").with.ref) = "stale-ref"' ''
 run_mutation "deny-shape validation removed" '' '/ingressDeny/d'
@@ -180,9 +198,12 @@ run_mutation "Platform inventory parser removed" '' '/jq -se/d'
 run_mutation "all-rules execution validation removed" '' '/applyRules/d'
 run_mutation "HTTPRoute backend group validation removed" '' '/\.group \/\/ ""/d'
 run_mutation "rendered scaffold validation removed" '' '/kubectl kustomize/d'
+run_mutation "live Platform route-domain validation removed" '' \
+	'/^validate_platform_route_hostnames "\$platform_root" "\$http_route"$/d'
+run_mutation "route-domain mutation controls removed" '' '/run_hostname_mutation/d'
 run_mutation "README runtime ownership marker removed" '' '' \
 	'/^scripts\/platform-network-floor\.test\.sh$/d'
 run_mutation ".templatesyncignore runtime marker removed" '' '' '' \
 	'/^scripts\/platform-network-floor\.test\.sh$/d'
 
-echo "PASS: Platform network-floor contract (happy path + 16 safety mutations)"
+echo "PASS: Platform network-floor contract (happy path + 20 safety mutations)"

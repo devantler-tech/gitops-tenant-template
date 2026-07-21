@@ -25,6 +25,10 @@ fill in the scaffolding.
    literal `-app` secret suffix, and the `openbao` SecretStore name. (Doing this
    by hand is easy to get half-wrong.) It's a one-shot helper — delete it once
    adopted.
+   The example route is renamed for both environments: `<tenant>.platform.lan`
+   locally and `<tenant>.platform.devantler.tech` in production. Keep both in
+   `deploy/httproute.yaml`; add any custom domains beside them. Each Platform
+   Gateway attaches only the hostnames its listener serves.
 3. Replace the rest of the scaffolding with your app: application code,
    `Dockerfile`, the `ci.yaml` jobs, and fill in `AGENTS.md`.
 4. Create `.templatesyncignore` (see below).

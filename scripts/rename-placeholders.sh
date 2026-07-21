@@ -5,7 +5,7 @@
 # value — your tenant (repository) name:
 #   • `app`       — the example app/resource name (Deployment, Service, the
 #                   `app.kubernetes.io/name` label *value*, HTTPRoute, the CNPG
-#                   Cluster, its database/owner, and the example hostname).
+#                   Cluster, its database/owner, and the Platform hostnames).
 #   • REPLACE_ME  — the container image and OpenBao path.
 #   • replace-me  — the tenant's Vault role and ServiceAccount.
 # (Per the template convention the Deployment container `name` MUST equal the
@@ -61,6 +61,7 @@ for f in "$deploy_dir"/*.yaml; do
     -e "s/: app-db\$/: $name-db/" \
     -e "s/: app-secrets\$/: $name-secrets/" \
     -e "s/app\\.platform\\.lan/$name.platform.lan/" \
+    -e "s/app\\.platform\\.devantler\\.tech/$name.platform.devantler.tech/" \
     -e "s/: app\$/: $name/" \
     "$f" > "$tmp"
   if cmp -s "$f" "$tmp"; then
