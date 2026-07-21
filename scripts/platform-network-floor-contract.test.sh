@@ -73,6 +73,8 @@ validate_contract() {
 		'targetPort' \
 		'containerPort' \
 		'backendRefs' \
+		'validate_platform_network_inventory' \
+		'jq -se' \
 		'.group // ""' \
 		'.kind // "Service"' \
 		'UDP' \
@@ -80,6 +82,7 @@ validate_contract() {
 		'validate_network_floor' \
 		'run_platform_mutation' \
 		'run_platform_inventory_mutation' \
+		'run_additional_platform_policy_mutation' \
 		'run_scaffold_mutation' \
 		'run_rendered_scaffold_mutation'
 	do
@@ -171,6 +174,9 @@ run_mutation "Platform policy checkout pinned away from live main" \
 run_mutation "deny-shape validation removed" '' '/ingressDeny/d'
 run_mutation "Platform mutation controls removed" '' '/run_platform_mutation/d'
 run_mutation "Platform inventory controls removed" '' '/run_platform_inventory_mutation/d'
+run_mutation "complete Platform network inventory validation removed" '' '/validate_platform_network_inventory/d'
+run_mutation "additional Platform policy mutation controls removed" '' '/run_additional_platform_policy_mutation/d'
+run_mutation "Platform inventory parser removed" '' '/jq -se/d'
 run_mutation "all-rules execution validation removed" '' '/applyRules/d'
 run_mutation "HTTPRoute backend group validation removed" '' '/\.group \/\/ ""/d'
 run_mutation "rendered scaffold validation removed" '' '/kubectl kustomize/d'
@@ -179,4 +185,4 @@ run_mutation "README runtime ownership marker removed" '' '' \
 run_mutation ".templatesyncignore runtime marker removed" '' '' '' \
 	'/^scripts\/platform-network-floor\.test\.sh$/d'
 
-echo "PASS: Platform network-floor contract (happy path + 13 safety mutations)"
+echo "PASS: Platform network-floor contract (happy path + 16 safety mutations)"
