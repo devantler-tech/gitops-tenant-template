@@ -66,17 +66,27 @@ validate_contract() {
 		'k8s/bases/apps/ascoachingogvaner' \
 		'namespace.yaml' \
 		'service-account.yaml' \
+		'external-secret.yaml' \
+		'oci-repository.yaml' \
 		'role-binding-ascoachingogvaner.yaml' \
 		'flux-kustomization.yaml' \
 		'kustomization.yaml' \
 		'tenantNamespace' \
+		'ghcrAuth' \
+		'ociRepository' \
 		'kustomizationSops' \
 		'includeWhen' \
 		'app.kubernetes.io/managed-by' \
 		'pod-security.kubernetes.io/enforce' \
 		'pod-security.kubernetes.io/enforce-version' \
 		'tenant-edit' \
+		'imagePullSecrets' \
+		'infrastructure/ghcr/auth' \
+		'kubernetes.io/dockerconfigjson' \
+		'matchOIDCIdentity' \
+		'publish-app.yaml' \
 		'serviceAccountName' \
+		'sourceRef' \
 		'targetNamespace' \
 		'validate_platform' \
 		'run_mutation'
