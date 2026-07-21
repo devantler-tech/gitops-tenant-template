@@ -61,6 +61,7 @@ tenant still carrying these from an older sync can delete them for good):**
 | `scripts/pod-security-admission*.test.sh` | Proves the rendered Deployment is accepted at Pod Security `restricted` while unsafe mutations are denied, and pins that live gate against structural bypasses |
 | `scripts/tenant-rbac*.test.sh` | Proves the Platform tenant reconciliation identity can manage every rendered scaffold resource while cluster-scoped and interactive privileges stay denied |
 | `scripts/platform-tenant-envelope*.test.sh` | Binds those workload-level models to Platform's live KRO and manual tenant registrations: managed Pod Security namespace, `tenant-edit` ServiceAccount binding, and Flux impersonation plus target namespace |
+| `scripts/platform-network-floor*.test.sh` | Binds Platform's generated default-deny, DNS, and standard NetworkPolicy floor to the scaffold's required Gateway, namespace, CNPG, Kubernetes API, and DNS paths |
 
 **Yours (list these in `.templatesyncignore`):**
 
@@ -90,6 +91,8 @@ scripts/tenant-rbac.test.sh
 scripts/tenant-rbac-contract.test.sh
 scripts/platform-tenant-envelope.test.sh
 scripts/platform-tenant-envelope-contract.test.sh
+scripts/platform-network-floor.test.sh
+scripts/platform-network-floor-contract.test.sh
 .github/workflows/validate-scaffold.yaml
 ```
 
@@ -121,5 +124,6 @@ sh scripts/agent-instructions.test.sh                 # agent safety contract
 sh scripts/pod-security-admission-contract.test.sh    # Pod Security workflow contract
 sh scripts/tenant-rbac-contract.test.sh               # Platform tenant RBAC workflow contract
 sh scripts/platform-tenant-envelope-contract.test.sh  # live Platform tenant-envelope contract
+sh scripts/platform-network-floor-contract.test.sh    # generated Platform network-floor contract
 actionlint .github/workflows/*                         # workflows parse
 ```
