@@ -67,11 +67,16 @@ validate_contract() {
 		'toEntities' \
 		'kube-apiserver' \
 		'request.object.metadata.name' \
+		'kubectl kustomize' \
+		'targetPort' \
+		'containerPort' \
+		'backendRefs' \
 		'UDP' \
 		'TCP' \
 		'validate_network_floor' \
 		'run_platform_mutation' \
-		'run_scaffold_mutation'
+		'run_scaffold_mutation' \
+		'run_rendered_scaffold_mutation'
 	do
 		grep -Fq -- "$needle" "$runtime_file" ||
 			fail "Platform network-floor runtime lacks: $needle"
@@ -158,9 +163,10 @@ run_mutation "Platform policy checkout removed" \
 	'(.jobs.admissibility.steps[] | select(.with.repository == "devantler-tech/platform").with."sparse-checkout") |= sub("k8s/bases/infrastructure/cluster-policies\\n"; "")' ''
 run_mutation "deny-shape validation removed" '' '/ingressDeny/d'
 run_mutation "Platform mutation controls removed" '' '/run_platform_mutation/d'
+run_mutation "rendered scaffold validation removed" '' '/kubectl kustomize/d'
 run_mutation "README runtime ownership marker removed" '' '' \
 	'/^scripts\/platform-network-floor\.test\.sh$/d'
 run_mutation ".templatesyncignore runtime marker removed" '' '' '' \
 	'/^scripts\/platform-network-floor\.test\.sh$/d'
 
-echo "PASS: Platform network-floor contract (happy path + 8 safety mutations)"
+echo "PASS: Platform network-floor contract (happy path + 9 safety mutations)"
