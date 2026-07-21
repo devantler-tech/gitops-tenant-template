@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Pin the live Platform tenant envelope that surrounds this template's workload.
+# Pin the signed publisher and live Platform envelope that deliver this workload.
 set -eu
 
 script_dir=$(CDPATH='' cd -P -- "$(dirname -- "$0")" && pwd)
@@ -66,17 +66,27 @@ validate_contract() {
 		'k8s/bases/apps/ascoachingogvaner' \
 		'namespace.yaml' \
 		'service-account.yaml' \
+		'external-secret.yaml' \
+		'oci-repository.yaml' \
 		'role-binding-ascoachingogvaner.yaml' \
 		'flux-kustomization.yaml' \
 		'kustomization.yaml' \
 		'tenantNamespace' \
+		'ghcrAuth' \
+		'ociRepository' \
 		'kustomizationSops' \
 		'includeWhen' \
 		'app.kubernetes.io/managed-by' \
 		'pod-security.kubernetes.io/enforce' \
 		'pod-security.kubernetes.io/enforce-version' \
 		'tenant-edit' \
+		'imagePullSecrets' \
+		'infrastructure/ghcr/auth' \
+		'kubernetes.io/dockerconfigjson' \
+		'matchOIDCIdentity' \
+		'publish-app.yaml' \
 		'serviceAccountName' \
+		'sourceRef' \
 		'targetNamespace' \
 		'validate_platform' \
 		'run_mutation'
@@ -84,6 +94,10 @@ validate_contract() {
 		grep -Fq -- "$needle" "$runtime_file" ||
 			fail "Platform tenant-envelope runtime lacks: $needle"
 	done
+	# Match the runtime's literal variable reference.
+	# shellcheck disable=SC2016
+	[ "$(grep -Ec '^[[:space:]]*validate_publish_workflow "\$publish_workflow"$' "$runtime_file")" -eq 2 ] ||
+		fail "Platform tenant-envelope runtime does not validate the publisher on every entry path"
 
 	# The three existing gates model the same context independently. Keep their
 	# shared identity assumptions explicit so they cannot silently diverge from
@@ -198,6 +212,10 @@ run_mutation "SecretStore managed namespace context removed" \
 	'(.jobs.admissibility.steps[] | select(.id == "apply-admission-policies").run) |= sub("app.kubernetes.io/managed-by"; "removed-label")' ''
 run_mutation "SOPS variant validation removed" '' '/kustomizationSops/d'
 run_mutation "target namespace validation removed" '' '/targetNamespace/d'
+run_mutation "private artifact credential validation removed" '' '/ghcrAuth/d'
+run_mutation "signed publisher validation removed" '' '/publish-app\.yaml/d'
+run_mutation "publisher baseline invocation removed" '' \
+	'/^[[:space:]]*validate_publish_workflow /d'
 run_mutation "README tenant-envelope runtime marker removed" '' '' '' '' \
 	'/^scripts\/platform-tenant-envelope\.test\.sh$/d'
 run_mutation ".templatesyncignore tenant-envelope runtime marker removed" '' '' '' '' '' \
@@ -207,4 +225,4 @@ run_mutation "Pod Security context removed" '' '' \
 run_mutation "RBAC context removed" '' '' '' \
 	'/tenant-edit/d'
 
-echo "PASS: Platform tenant-envelope contract (happy path + 10 safety mutations)"
+echo "PASS: Platform tenant-envelope contract (happy path + 13 safety mutations)"
