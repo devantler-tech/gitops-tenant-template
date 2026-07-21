@@ -28,9 +28,11 @@ permissions: {}
 #   4. exercise the rendered workload against Platform's live tenant RBAC so a
 #      role drift cannot turn green onboarding into a forbidden reconciliation,
 #      and
-#   5. bind those workload-level models to Platform's live tenant envelope — the
-#      Namespace labels, tenant-edit binding, and Flux impersonation/targeting
-#      relationships supplied by both the KRO Tenant and a manual registration.
+#   5. bind those workload-level models to the signed private-artifact handoff
+#      and Platform's live tenant envelope — the publisher, GHCR pull identity,
+#      cosign-verifying OCI source, Namespace labels, tenant-edit binding, and
+#      Flux source/impersonation/target relationships supplied by both the KRO
+#      Tenant and a manual registration.
 # This job runs ONLY in the template repo; it no-ops in tenants created from it
 # (the guard below is false there), mirroring how cd.yaml/release.yaml run only in
 # tenants. Tenants replace deploy/ with their own app and validate it via their
