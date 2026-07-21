@@ -153,12 +153,12 @@ validate_network_floor() {
 			.spec.parentRefs[0].name == "platform",
 			.spec.parentRefs[0].namespace == "kube-system",
 			.spec.parentRefs[0].sectionName == "https",
-			([.spec.rules[].backendRefs[] | select(
-				.name == "app"
-				and ((.group // "") == "")
-				and ((.kind // "Service") == "Service")
-				and (has("namespace") | not)
-			)] | length) == 1
+			([.spec.rules[].backendRefs[] | select([
+				.name == "app",
+				((.group // "") == ""),
+				((.kind // "Service") == "Service"),
+				(has("namespace") | not)
+			] | all)] | length) == 1
 		] | all
 	' "$http_route" >/dev/null ||
 		fail "rendered tenant HTTPRoute lacks one local core Service app backend"
@@ -181,8 +181,13 @@ validate_network_floor() {
 	# shellcheck disable=SC2016
 	yq eval -e '
 		[.spec.rules[].backendRefs[]
-			| select(.name == "app")
-			| select((.port | tostring) == strenv(app_service_port))
+			| select([
+				.name == "app",
+				((.group // "") == ""),
+				((.kind // "Service") == "Service"),
+				(has("namespace") | not),
+				((.port | tostring) == strenv(app_service_port))
+			] | all)
 		] | length == 1
 	' "$http_route" >/dev/null ||
 		fail "rendered HTTPRoute backend port no longer matches the app Service port"
@@ -429,7 +434,9 @@ run_http_route_mutation "HTTPRoute backend moved to another namespace" \
 	'.spec.rules[0].backendRefs[0].namespace = "other-namespace"'
 run_http_route_mutation "HTTPRoute backend changed from a core Service" \
 	'.spec.rules[0].backendRefs[0] *= {"group": "apps", "kind": "Deployment"}'
+run_http_route_mutation "HTTPRoute backend identity and port split across different refs" \
+	'.spec.rules[0].backendRefs = [{"name": "app", "port": 81}, {"name": "app", "namespace": "other-namespace", "port": 80}]'
 run_rendered_scaffold_mutation "Kustomize patch removed rendered Gateway allowance" \
 	'.patches = [{"target": {"kind": "CiliumNetworkPolicy", "name": "app"}, "patch": "- op: remove\n  path: /spec/ingress/0"}]'
 
-echo "PASS: Platform network floor (generated policies + tenant allows + 23 safety mutations)"
+echo "PASS: Platform network floor (generated policies + tenant allows + 24 safety mutations)"
