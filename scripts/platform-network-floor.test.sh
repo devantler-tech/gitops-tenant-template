@@ -40,7 +40,11 @@ validate_network_floor() {
 			(.spec.applyRules // "All") == "All",
 			([.spec.rules[] | select(.name == "generate-default-deny")] | length) == 1,
 			([.spec.rules[] | select(.name == "generate-allow-dns")] | length) == 1,
-			([.spec.rules[] | select(.name == "generate-default-deny-networkpolicy")] | length) == 1
+			([.spec.rules[] | select(.name == "generate-default-deny-networkpolicy")] | length) == 1,
+			([.spec.rules[] | select([
+				.generate.kind == "CiliumNetworkPolicy",
+				.generate.kind == "NetworkPolicy"
+			] | any)] | length) == 3
 		] | all
 	' "$platform_policy" >/dev/null ||
 		fail "Platform generated network floor no longer has all three required rules"
@@ -86,11 +90,19 @@ validate_network_floor() {
 			.generate.name == "allow-dns",
 			.generate.namespace == "{{request.object.metadata.name}}",
 			.generate.synchronize == true,
+			(.generate.data.spec | keys | length) == 2,
 			(.generate.data.spec.endpointSelector | keys | length) == 0,
 			(.generate.data.spec | has("ingressDeny") | not),
 			(.generate.data.spec | has("egressDeny") | not),
+			(.generate.data.spec.egress | length) == 1,
+			(.generate.data.spec.egress[0] | keys | length) == 2,
+			(.generate.data.spec.egress[0].toEndpoints | length) == 1,
+			(.generate.data.spec.egress[0].toEndpoints[0] | keys | length) == 1,
+			(.generate.data.spec.egress[0].toEndpoints[0].matchLabels | keys | length) == 2,
 			.generate.data.spec.egress[0].toEndpoints[0].matchLabels."k8s:io.kubernetes.pod.namespace" == "kube-system",
 			.generate.data.spec.egress[0].toEndpoints[0].matchLabels."k8s-app" == "kube-dns",
+			(.generate.data.spec.egress[0].toPorts | length) == 1,
+			(.generate.data.spec.egress[0].toPorts[0] | keys | length) == 1,
 			(.generate.data.spec.egress[0].toPorts[0].ports | [(length == 2), contains([{"port": "53", "protocol": "TCP"}]), contains([{"port": "53", "protocol": "UDP"}])] | all)
 		] | all
 	' "$platform_policy" >/dev/null ||
@@ -130,7 +142,10 @@ validate_network_floor() {
 			(.metadata | has("namespace") | not),
 			(.spec.selector | keys | length) == 1,
 			.spec.selector."app.kubernetes.io/name" == "app",
-			([.spec.ports[] | select(.name == "http")] | length) == 1
+			([.spec.ports[] | select([
+				.name == "http",
+				((.protocol // "TCP") == "TCP")
+			] | all)] | length) == 1
 		] | all
 	' "$service" >/dev/null || fail "rendered tenant Service lacks one named HTTP port"
 	# shellcheck disable=SC2016
@@ -139,6 +154,9 @@ validate_network_floor() {
 			.kind == "Deployment",
 			.metadata.name == "app",
 			(.metadata | has("namespace") | not),
+			(.spec.selector | keys | length) == 1,
+			(.spec.selector.matchLabels | keys | length) == 1,
+			.spec.selector.matchLabels."app.kubernetes.io/name" == "app",
 			.spec.template.metadata.labels."app.kubernetes.io/name" == "app",
 			([.spec.template.spec.containers[] | select(.name == "app")] | length) == 1
 		] | all
@@ -150,6 +168,8 @@ validate_network_floor() {
 			.metadata.name == "app",
 			(.metadata | has("namespace") | not),
 			(.spec.parentRefs | length) == 1,
+			(.spec.parentRefs[0].group // "gateway.networking.k8s.io") == "gateway.networking.k8s.io",
+			(.spec.parentRefs[0].kind // "Gateway") == "Gateway",
 			.spec.parentRefs[0].name == "platform",
 			.spec.parentRefs[0].namespace == "kube-system",
 			.spec.parentRefs[0].sectionName == "https",
@@ -201,17 +221,33 @@ validate_network_floor() {
 			(.spec.endpointSelector | keys | length) == 0,
 			(.spec | has("ingressDeny") | not),
 			(.spec | has("egressDeny") | not),
+			(.spec.ingress | length) == 3,
+			(.spec.egress | length) == 3,
 			([.spec.ingress[] | select(.fromEntities | contains(["ingress"]))] | length) == 1,
+			(.spec.ingress[] | select(.fromEntities | contains(["ingress"])) | keys | length) == 2,
+			(.spec.ingress[] | select(.fromEntities | contains(["ingress"])) | .fromEntities | [(length == 1), contains(["ingress"])] | all),
 			(.spec.ingress[] | select(.fromEntities | contains(["ingress"])) | .toPorts[0].ports | [(length == 1), contains([{"port": strenv(app_target_port), "protocol": "TCP"}])] | all),
 			([.spec.ingress[] | select(.fromEndpoints[0] | keys | length == 0)] | length) == 1,
 			(.spec.ingress[] | select(.fromEndpoints[0] | keys | length == 0) | keys | length) == 1,
 			([.spec.ingress[] | select(.fromEndpoints[0].matchLabels."k8s:io.kubernetes.pod.namespace" == "cnpg-system")] | length) == 1,
+			(.spec.ingress[] | select(.fromEndpoints[0].matchLabels."k8s:io.kubernetes.pod.namespace" == "cnpg-system") | keys | length) == 2,
+			(.spec.ingress[] | select(.fromEndpoints[0].matchLabels."k8s:io.kubernetes.pod.namespace" == "cnpg-system") | .fromEndpoints | length) == 1,
+			(.spec.ingress[] | select(.fromEndpoints[0].matchLabels."k8s:io.kubernetes.pod.namespace" == "cnpg-system") | .fromEndpoints[0] | keys | length) == 1,
+			(.spec.ingress[] | select(.fromEndpoints[0].matchLabels."k8s:io.kubernetes.pod.namespace" == "cnpg-system") | .fromEndpoints[0].matchLabels | keys | length) == 1,
 			(.spec.ingress[] | select(.fromEndpoints[0].matchLabels."k8s:io.kubernetes.pod.namespace" == "cnpg-system") | .toPorts[0].ports | [(length == 2), contains([{"port": "5432", "protocol": "TCP"}]), contains([{"port": "8000", "protocol": "TCP"}])] | all),
 			([.spec.egress[] | select(.toEndpoints[0] | keys | length == 0)] | length) == 1,
 			(.spec.egress[] | select(.toEndpoints[0] | keys | length == 0) | keys | length) == 1,
 			([.spec.egress[] | select(.toEntities | contains(["kube-apiserver"]))] | length) == 1,
+			(.spec.egress[] | select(.toEntities | contains(["kube-apiserver"])) | keys | length) == 1,
+			(.spec.egress[] | select(.toEntities | contains(["kube-apiserver"])) | .toEntities | [(length == 1), contains(["kube-apiserver"])] | all),
 			([.spec.egress[] | select(.toEndpoints[0].matchLabels."k8s-app" == "kube-dns")] | length) == 1,
+			(.spec.egress[] | select(.toEndpoints[0].matchLabels."k8s-app" == "kube-dns") | keys | length) == 2,
+			(.spec.egress[] | select(.toEndpoints[0].matchLabels."k8s-app" == "kube-dns") | .toEndpoints | length) == 1,
+			(.spec.egress[] | select(.toEndpoints[0].matchLabels."k8s-app" == "kube-dns") | .toEndpoints[0] | keys | length) == 1,
+			(.spec.egress[] | select(.toEndpoints[0].matchLabels."k8s-app" == "kube-dns") | .toEndpoints[0].matchLabels | keys | length) == 2,
 			(.spec.egress[] | select(.toEndpoints[0].matchLabels."k8s-app" == "kube-dns") | .toEndpoints[0].matchLabels."k8s:io.kubernetes.pod.namespace" == "kube-system"),
+			(.spec.egress[] | select(.toEndpoints[0].matchLabels."k8s-app" == "kube-dns") | .toPorts | length) == 1,
+			(.spec.egress[] | select(.toEndpoints[0].matchLabels."k8s-app" == "kube-dns") | .toPorts[0] | keys | length) == 1,
 			(.spec.egress[] | select(.toEndpoints[0].matchLabels."k8s-app" == "kube-dns") | .toPorts[0].ports | [(length == 2), contains([{"port": "53", "protocol": "TCP"}]), contains([{"port": "53", "protocol": "UDP"}])] | all)
 		] | all
 	' "$scaffold_policy" >/dev/null ||
@@ -338,6 +374,20 @@ run_service_mutation() {
 	fi
 }
 
+run_deployment_mutation() {
+	description=$1
+	mutation=$2
+	yq eval "$mutation" "$deployment_baseline" > "$mutation_dir/deployment-mutant.yaml"
+	if (validate_network_floor \
+		"$platform_baseline" \
+		"$scaffold_baseline" \
+		"$service_baseline" \
+		"$mutation_dir/deployment-mutant.yaml" \
+		"$http_route_baseline") >/dev/null 2>&1; then
+		fail "mutation passed: $description"
+	fi
+}
+
 run_http_route_mutation() {
 	description=$1
 	mutation=$2
@@ -396,6 +446,8 @@ run_platform_inventory_mutation "generated floor removed from rendered Platform 
 	'del(.resources[] | select(. == "best-practices/add-default-deny.yaml"))'
 run_platform_mutation "default-deny generation removed" \
 	'del(.spec.rules[] | select(.name == "generate-default-deny"))'
+run_platform_mutation "additional generated network-policy rule introduced" \
+	'.spec.rules += [{"name": "generate-world-egress", "match": {"any": [{"resources": {"kinds": ["Namespace"]}}]}, "generate": {"apiVersion": "cilium.io/v2", "kind": "CiliumNetworkPolicy", "name": "world-egress", "namespace": "{{request.object.metadata.name}}", "data": {"spec": {"endpointSelector": {}, "egress": [{"toEntities": ["world"]}]}}}}]'
 run_platform_mutation "only the first matching generation rule executes" \
 	'.spec.applyRules = "One"'
 run_platform_mutation "tenant namespace target removed" \
@@ -408,28 +460,44 @@ run_platform_mutation "generated DNS TCP allowance removed" \
 	'del(.spec.rules[] | select(.name == "generate-allow-dns").generate.data.spec.egress[0].toPorts[0].ports[] | select(.protocol == "TCP"))'
 run_platform_mutation "generated DNS deny override introduced" \
 	'(.spec.rules[] | select(.name == "generate-allow-dns").generate.data.spec.egressDeny) = [{"toEntities": ["all"]}]'
+run_platform_mutation "generated DNS allowance broadened to world egress" \
+	'(.spec.rules[] | select(.name == "generate-allow-dns").generate.data.spec.egress) += [{"toEntities": ["world"]}]'
 run_platform_mutation "standard default-deny kind changed" \
 	'(.spec.rules[] | select(.name == "generate-default-deny-networkpolicy").generate.kind) = "CiliumNetworkPolicy"'
 run_scaffold_mutation "Gateway ingress allowance removed" \
 	'(.spec.ingress[] | select(.fromEntities | contains(["ingress"])).fromEntities) = ["cluster"]'
+run_scaffold_mutation "unexpected world ingress allowance added" \
+	'.spec.ingress += [{"fromEntities": ["world"]}]'
 run_scaffold_mutation "same-namespace ingress allowance removed" \
 	'del(.spec.ingress[] | select(.fromEndpoints[0] | keys | length == 0))'
 run_scaffold_mutation "same-namespace ingress restricted to one port" \
 	'(.spec.ingress[] | select(.fromEndpoints[0] | keys | length == 0).toPorts) = [{"ports": [{"port": "3000", "protocol": "TCP"}]}]'
 run_scaffold_mutation "Kubernetes API egress allowance removed" \
 	'(.spec.egress[] | select(.toEntities | contains(["kube-apiserver"])).toEntities) = ["host"]'
+run_scaffold_mutation "Kubernetes API egress allowance broadened to world" \
+	'(.spec.egress[] | select(.toEntities | contains(["kube-apiserver"])).toEntities) += ["world"]'
+run_scaffold_mutation "unexpected world egress allowance added" \
+	'.spec.egress += [{"toEntities": ["world"]}]'
 run_scaffold_mutation "tenant DNS UDP allowance removed" \
 	'del(.spec.egress[] | select(.toEndpoints[0].matchLabels."k8s-app" == "kube-dns").toPorts[0].ports[] | select(.protocol == "UDP"))'
 run_scaffold_mutation "tenant Gateway deny override introduced" \
 	'.spec.ingressDeny = [{"fromEntities": ["ingress"]}]'
 run_scaffold_mutation "network policy moved outside the workload namespace" \
 	'.metadata.namespace = "other-namespace"'
+run_scaffold_mutation "CNPG selector restricted away from operator pods" \
+	'(.spec.ingress[] | select(.fromEndpoints[0].matchLabels."k8s:io.kubernetes.pod.namespace" == "cnpg-system").fromEndpoints[0].matchLabels."app.kubernetes.io/name") = "nonexistent"'
 run_service_mutation "Service target port diverged from workload and network policy" \
 	'(.spec.ports[] | select(.name == "http").targetPort) = 3001'
 run_service_mutation "Service selector diverged from workload labels" \
 	'.spec.selector."app.kubernetes.io/name" = "other-app"'
+run_service_mutation "Service HTTP protocol changed to UDP" \
+	'(.spec.ports[] | select(.name == "http").protocol) = "UDP"'
+run_deployment_mutation "Deployment selector diverged from pod labels" \
+	'.spec.selector.matchLabels."app.kubernetes.io/name" = "other-app"'
 run_http_route_mutation "HTTPRoute detached from the Platform Gateway" \
 	'.spec.parentRefs[0].name = "other-gateway"'
+run_http_route_mutation "HTTPRoute parent changed from a Gateway" \
+	'.spec.parentRefs[0] *= {"group": "apps", "kind": "Deployment"}'
 run_http_route_mutation "HTTPRoute backend moved to another namespace" \
 	'.spec.rules[0].backendRefs[0].namespace = "other-namespace"'
 run_http_route_mutation "HTTPRoute backend changed from a core Service" \
@@ -439,4 +507,4 @@ run_http_route_mutation "HTTPRoute backend identity and port split across differ
 run_rendered_scaffold_mutation "Kustomize patch removed rendered Gateway allowance" \
 	'.patches = [{"target": {"kind": "CiliumNetworkPolicy", "name": "app"}, "patch": "- op: remove\n  path: /spec/ingress/0"}]'
 
-echo "PASS: Platform network floor (generated policies + tenant allows + 24 safety mutations)"
+echo "PASS: Platform network floor (generated policies + tenant allows + 33 safety mutations)"
