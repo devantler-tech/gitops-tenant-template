@@ -94,6 +94,10 @@ validate_contract() {
 		grep -Fq -- "$needle" "$runtime_file" ||
 			fail "Platform tenant-envelope runtime lacks: $needle"
 	done
+	# Match the runtime's literal variable reference.
+	# shellcheck disable=SC2016
+	[ "$(grep -Ec '^[[:space:]]*validate_publish_workflow "\$publish_workflow"$' "$runtime_file")" -eq 2 ] ||
+		fail "Platform tenant-envelope runtime does not validate the publisher on every entry path"
 
 	# The three existing gates model the same context independently. Keep their
 	# shared identity assumptions explicit so they cannot silently diverge from
@@ -210,6 +214,8 @@ run_mutation "SOPS variant validation removed" '' '/kustomizationSops/d'
 run_mutation "target namespace validation removed" '' '/targetNamespace/d'
 run_mutation "private artifact credential validation removed" '' '/ghcrAuth/d'
 run_mutation "signed publisher validation removed" '' '/publish-app\.yaml/d'
+run_mutation "publisher baseline invocation removed" '' \
+	'/^[[:space:]]*validate_publish_workflow /d'
 run_mutation "README tenant-envelope runtime marker removed" '' '' '' '' \
 	'/^scripts\/platform-tenant-envelope\.test\.sh$/d'
 run_mutation ".templatesyncignore tenant-envelope runtime marker removed" '' '' '' '' '' \
@@ -219,4 +225,4 @@ run_mutation "Pod Security context removed" '' '' \
 run_mutation "RBAC context removed" '' '' '' \
 	'/tenant-edit/d'
 
-echo "PASS: Platform tenant-envelope contract (happy path + 12 safety mutations)"
+echo "PASS: Platform tenant-envelope contract (happy path + 13 safety mutations)"

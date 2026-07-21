@@ -30,9 +30,12 @@ validate_publish_workflow() {
 	yq eval -e '
 		((.["on"] | length) == 1)
 		and (.["on"] | has("push"))
+		and ((.["on"].push | length) == 1)
 		and ((.["on"].push.tags | length) == 1)
 		and .["on"].push.tags[0] == "v*"
 		and ((.permissions | length) == 0)
+		and ((.jobs | length) == 1)
+		and (.jobs | has("publish"))
 		and .jobs.publish.if == "github.repository != '\''devantler-tech/gitops-tenant-template'\''"
 		and ((.jobs.publish.permissions | length) == 3)
 		and .jobs.publish.permissions.contents == "read"
@@ -113,7 +116,9 @@ validate_platform() {
 		and $ociRepository.spec.ref.semver == ">=1.0.0"
 		and $ociRepository.spec.url == "oci://ghcr.io/devantler-tech/${schema.spec.name}/manifests"
 		and $ociRepository.spec.secretRef.name == "ghcr-auth"
+		and (($ociRepository.spec.suspend // false) == false)
 		and $ociRepository.spec.verify.provider == "cosign"
+		and ($ociRepository.spec.verify | has("secretRef") | not)
 		and ($ociRepository.spec.verify.matchOIDCIdentity | length) == 1
 		and $ociRepository.spec.verify.matchOIDCIdentity[0].issuer == strenv(expected_oidc_issuer)
 		and $ociRepository.spec.verify.matchOIDCIdentity[0].subject == strenv(expected_oidc_subject)
@@ -133,6 +138,7 @@ validate_platform() {
 		and $kustomization.spec.serviceAccountName == "${serviceAccount.metadata.name}"
 		and $kustomization.spec.sourceRef.kind == "OCIRepository"
 		and $kustomization.spec.sourceRef.name == "${ociRepository.metadata.name}"
+		and ($kustomization.spec.sourceRef | has("namespace") | not)
 		and $kustomization.spec.targetNamespace == "${tenantNamespace.metadata.name}"
 		and (($kustomizationSopsResource.includeWhen | join("|")) == "${schema.spec.sops}")
 		and $kustomizationSops.kind == "Kustomization"
@@ -140,6 +146,7 @@ validate_platform() {
 		and $kustomizationSops.spec.serviceAccountName == "${serviceAccount.metadata.name}"
 		and $kustomizationSops.spec.sourceRef.kind == "OCIRepository"
 		and $kustomizationSops.spec.sourceRef.name == "${ociRepository.metadata.name}"
+		and ($kustomizationSops.spec.sourceRef | has("namespace") | not)
 		and $kustomizationSops.spec.targetNamespace == "${tenantNamespace.metadata.name}")
 	' "$rgd" >/dev/null || fail "Platform KRO Tenant no longer provides the required namespace, RBAC, and Flux envelope"
 
@@ -193,7 +200,9 @@ validate_platform() {
 		and .spec.ref.semver == ">=1.0.0"
 		and .spec.url == strenv(expected_manual_oci_url)
 		and .spec.secretRef.name == "ghcr-auth"
+		and ((.spec.suspend // false) == false)
 		and .spec.verify.provider == "cosign"
+		and (.spec.verify | has("secretRef") | not)
 		and (.spec.verify.matchOIDCIdentity | length) == 1
 		and .spec.verify.matchOIDCIdentity[0].issuer == strenv(expected_oidc_issuer)
 		and .spec.verify.matchOIDCIdentity[0].subject == strenv(expected_oidc_subject)
@@ -222,6 +231,7 @@ validate_platform() {
 		and .spec.serviceAccountName == strenv(tenant_name)
 		and .spec.sourceRef.kind == "OCIRepository"
 		and .spec.sourceRef.name == strenv(tenant_name)
+		and (.spec.sourceRef | has("namespace") | not)
 		and .spec.targetNamespace == strenv(tenant_name)
 	' "$manual_kustomization" >/dev/null || fail "manual Platform tenant Flux Kustomization no longer impersonates and targets its namespace"
 
@@ -328,10 +338,18 @@ run_mutation "KRO OCI issuer widened" "$rgd_path" \
 	'(.spec.resources[] | select(.id == "ociRepository").template.spec.verify.matchOIDCIdentity[0].issuer) = "^https://.*$"'
 run_mutation "KRO OCI subject widened" "$rgd_path" \
 	'(.spec.resources[] | select(.id == "ociRepository").template.spec.verify.matchOIDCIdentity[0].subject) = "^https://github.com/devantler-tech/.*$"'
+run_mutation "KRO OCI key verification override added" "$rgd_path" \
+	'(.spec.resources[] | select(.id == "ociRepository").template.spec.verify.secretRef.name) = "alternate-cosign-key"'
+run_mutation "KRO OCI source suspended" "$rgd_path" \
+	'(.spec.resources[] | select(.id == "ociRepository").template.spec.suspend) = true'
 run_mutation "KRO non-SOPS artifact source disconnected" "$rgd_path" \
 	'del(.spec.resources[] | select(.id == "kustomization").template.spec.sourceRef)'
 run_mutation "KRO SOPS artifact source disconnected" "$rgd_path" \
 	'del(.spec.resources[] | select(.id == "kustomizationSops").template.spec.sourceRef)'
+run_mutation "KRO non-SOPS artifact source crosses namespace" "$rgd_path" \
+	'(.spec.resources[] | select(.id == "kustomization").template.spec.sourceRef.namespace) = "another-tenant"'
+run_mutation "KRO SOPS artifact source crosses namespace" "$rgd_path" \
+	'(.spec.resources[] | select(.id == "kustomizationSops").template.spec.sourceRef.namespace) = "another-tenant"'
 run_mutation "manual managed-by label changed" "$manual_path/namespace.yaml" \
 	'.metadata.labels."app.kubernetes.io/managed-by" = "manual"'
 run_mutation "manual Pod Security level weakened" "$manual_path/namespace.yaml" \
@@ -360,8 +378,14 @@ run_mutation "manual OCI verification removed" "$manual_path/oci-repository.yaml
 	'del(.spec.verify)'
 run_mutation "manual OCI subject widened" "$manual_path/oci-repository.yaml" \
 	'(.spec.verify.matchOIDCIdentity[0].subject) = "^https://github.com/devantler-tech/.*$"'
+run_mutation "manual OCI key verification override added" "$manual_path/oci-repository.yaml" \
+	'(.spec.verify.secretRef.name) = "alternate-cosign-key"'
+run_mutation "manual OCI source suspended" "$manual_path/oci-repository.yaml" \
+	'.spec.suspend = true'
 run_mutation "manual Flux artifact source disconnected" "$manual_path/flux-kustomization.yaml" \
 	'del(.spec.sourceRef)'
+run_mutation "manual Flux artifact source crosses namespace" "$manual_path/flux-kustomization.yaml" \
+	'.spec.sourceRef.namespace = "another-tenant"'
 run_mutation "manual Namespace removed from inventory" "$manual_path/kustomization.yaml" \
 	'.resources -= ["namespace.yaml"]'
 run_mutation "manual GHCR credential removed from inventory" "$manual_path/kustomization.yaml" \
@@ -381,5 +405,9 @@ run_publish_mutation "application identity hard-coded" \
 	'.jobs.publish.with."app-name" = "app"'
 run_publish_mutation "publisher authority widened" \
 	'.jobs.publish.permissions.issues = "write"'
+run_publish_mutation "branch publication enabled" \
+	'.["on"].push.branches = ["main"]'
+run_publish_mutation "second package publisher added" \
+	'.jobs.shadow = {"runs-on": "ubuntu-latest", "permissions": {"packages": "write"}, "steps": []}'
 
-echo "PASS: signed tenant artifact envelope (KRO + manual + publisher + 48 safety mutations)"
+echo "PASS: signed tenant artifact envelope (KRO + manual + publisher + 57 safety mutations)"
