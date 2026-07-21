@@ -62,6 +62,7 @@ validate_contract() {
 		'generate-default-deny' \
 		'generate-allow-dns' \
 		'generate-default-deny-networkpolicy' \
+		'applyRules' \
 		'ingressDeny' \
 		'egressDeny' \
 		'fromEntities' \
@@ -72,10 +73,13 @@ validate_contract() {
 		'targetPort' \
 		'containerPort' \
 		'backendRefs' \
+		'.group // ""' \
+		'.kind // "Service"' \
 		'UDP' \
 		'TCP' \
 		'validate_network_floor' \
 		'run_platform_mutation' \
+		'run_platform_inventory_mutation' \
 		'run_scaffold_mutation' \
 		'run_rendered_scaffold_mutation'
 	do
@@ -166,10 +170,13 @@ run_mutation "Platform policy checkout pinned away from live main" \
 	'(.jobs.admissibility.steps[] | select(.with.repository == "devantler-tech/platform").with.ref) = "stale-ref"' ''
 run_mutation "deny-shape validation removed" '' '/ingressDeny/d'
 run_mutation "Platform mutation controls removed" '' '/run_platform_mutation/d'
+run_mutation "Platform inventory controls removed" '' '/run_platform_inventory_mutation/d'
+run_mutation "all-rules execution validation removed" '' '/applyRules/d'
+run_mutation "HTTPRoute backend group validation removed" '' '/\.group \/\/ ""/d'
 run_mutation "rendered scaffold validation removed" '' '/kubectl kustomize/d'
 run_mutation "README runtime ownership marker removed" '' '' \
 	'/^scripts\/platform-network-floor\.test\.sh$/d'
 run_mutation ".templatesyncignore runtime marker removed" '' '' '' \
 	'/^scripts\/platform-network-floor\.test\.sh$/d'
 
-echo "PASS: Platform network-floor contract (happy path + 10 safety mutations)"
+echo "PASS: Platform network-floor contract (happy path + 13 safety mutations)"

@@ -37,6 +37,7 @@ validate_network_floor() {
 		[
 			.kind == "ClusterPolicy",
 			.metadata.name == "add-default-deny",
+			(.spec.applyRules // "All") == "All",
 			([.spec.rules[] | select(.name == "generate-default-deny")] | length) == 1,
 			([.spec.rules[] | select(.name == "generate-allow-dns")] | length) == 1,
 			([.spec.rules[] | select(.name == "generate-default-deny-networkpolicy")] | length) == 1
@@ -86,6 +87,8 @@ validate_network_floor() {
 			.generate.namespace == "{{request.object.metadata.name}}",
 			.generate.synchronize == true,
 			(.generate.data.spec.endpointSelector | keys | length) == 0,
+			(.generate.data.spec | has("ingressDeny") | not),
+			(.generate.data.spec | has("egressDeny") | not),
 			.generate.data.spec.egress[0].toEndpoints[0].matchLabels."k8s:io.kubernetes.pod.namespace" == "kube-system",
 			.generate.data.spec.egress[0].toEndpoints[0].matchLabels."k8s-app" == "kube-dns",
 			(.generate.data.spec.egress[0].toPorts[0].ports | [(length == 2), contains([{"port": "53", "protocol": "TCP"}]), contains([{"port": "53", "protocol": "UDP"}])] | all)
@@ -150,9 +153,15 @@ validate_network_floor() {
 			.spec.parentRefs[0].name == "platform",
 			.spec.parentRefs[0].namespace == "kube-system",
 			.spec.parentRefs[0].sectionName == "https",
-			([.spec.rules[].backendRefs[] | select(.name == "app")] | length) == 1
+			([.spec.rules[].backendRefs[] | select(
+				.name == "app"
+				and ((.group // "") == "")
+				and ((.kind // "Service") == "Service")
+				and (has("namespace") | not)
+			)] | length) == 1
 		] | all
-	' "$http_route" >/dev/null || fail "rendered tenant HTTPRoute lacks one app backend"
+	' "$http_route" >/dev/null ||
+		fail "rendered tenant HTTPRoute lacks one local core Service app backend"
 
 	app_service_port=$(yq eval -r '.spec.ports[] | select(.name == "http") | .port | tostring' "$service")
 	app_target_port=$(yq eval -r '.spec.ports[] | select(.name == "http") | .targetPort | tostring' "$service")
@@ -215,10 +224,21 @@ extract_rendered_resource() {
 		| .kind
 	' "$rendered_bundle" | wc -l | tr -d ' ')
 	[ "$resource_count" -eq 1 ] ||
-		fail "rendered scaffold has $resource_count $resource_kind/$resource_name resources; expected 1"
+		fail "rendered inventory has $resource_count $resource_kind/$resource_name resources; expected 1"
 	yq eval-all '
 		select([.kind == strenv(resource_kind), .metadata.name == strenv(resource_name)] | all)
 	' "$rendered_bundle" > "$output_file"
+}
+
+render_platform_policy() {
+	platform_checkout=$1
+	output_dir=$2
+	mkdir -p "$output_dir"
+	rendered_bundle=$output_dir/all.yaml
+	kubectl kustomize \
+		"$platform_checkout/k8s/bases/infrastructure/cluster-policies" > "$rendered_bundle"
+	extract_rendered_resource \
+		"$rendered_bundle" ClusterPolicy add-default-deny "$output_dir/add-default-deny.yaml"
 }
 
 render_scaffold() {
@@ -236,8 +256,11 @@ render_scaffold() {
 if [ "${1:-}" = "--validate" ]; then
 	[ "$#" -eq 6 ] ||
 		fail "usage: $0 --validate <platform-root> <network-policy> <service> <deployment> <http-route>"
+	validation_dir=$(mktemp -d)
+	trap 'rm -rf "$validation_dir"' EXIT
+	render_platform_policy "$2" "$validation_dir"
 	validate_network_floor \
-		"$2/k8s/bases/infrastructure/cluster-policies/best-practices/add-default-deny.yaml" \
+		"$validation_dir/add-default-deny.yaml" \
 		"$3" "$4" "$5" "$6"
 	exit 0
 fi
@@ -248,7 +271,9 @@ rendered_root=$mutation_dir/rendered
 render_scaffold "$repo_root/deploy" "$rendered_root"
 
 platform_root=${PLATFORM_ROOT:-$repo_root/.platform}
-platform_policy=$platform_root/k8s/bases/infrastructure/cluster-policies/best-practices/add-default-deny.yaml
+rendered_platform_root=$mutation_dir/rendered-platform
+render_platform_policy "$platform_root" "$rendered_platform_root"
+platform_policy=$rendered_platform_root/add-default-deny.yaml
 scaffold_policy=$rendered_root/network-policy.yaml
 service=$rendered_root/service.yaml
 deployment=$rendered_root/deployment.yaml
@@ -341,10 +366,33 @@ run_rendered_scaffold_mutation() {
 	fi
 }
 
+run_platform_inventory_mutation() {
+	description=$1
+	mutation=$2
+	mutant_platform_root=$mutation_dir/platform-inventory-mutant
+	mutant_inventory=$mutant_platform_root/k8s/bases/infrastructure/cluster-policies
+	mkdir -p "$mutant_platform_root/k8s/bases/infrastructure"
+	cp -R "$platform_root/k8s/bases/infrastructure/cluster-policies" "$mutant_inventory"
+	yq eval "$mutation" "$mutant_inventory/kustomization.yaml" > "$mutation_dir/platform-kustomization-mutant.yaml"
+	mv "$mutation_dir/platform-kustomization-mutant.yaml" "$mutant_inventory/kustomization.yaml"
+	if sh "$script_dir/platform-network-floor.test.sh" --validate \
+		"$mutant_platform_root" \
+		"$scaffold_baseline" \
+		"$service_baseline" \
+		"$deployment_baseline" \
+		"$http_route_baseline" >/dev/null 2>&1; then
+		fail "mutation passed: $description"
+	fi
+}
+
 run_platform_mutation "matched ingress deny introduced" \
 	'(.spec.rules[] | select(.name == "generate-default-deny").generate.data.spec.ingressDeny[0].fromEntities) = ["all"]'
+run_platform_inventory_mutation "generated floor removed from rendered Platform inventory" \
+	'del(.resources[] | select(. == "best-practices/add-default-deny.yaml"))'
 run_platform_mutation "default-deny generation removed" \
 	'del(.spec.rules[] | select(.name == "generate-default-deny"))'
+run_platform_mutation "only the first matching generation rule executes" \
+	'.spec.applyRules = "One"'
 run_platform_mutation "tenant namespace target removed" \
 	'del(.spec.rules[] | select(.name == "generate-default-deny").generate.namespace)'
 run_platform_mutation "additional namespace exclusion introduced" \
@@ -353,6 +401,8 @@ run_platform_mutation "generation-suppressing precondition introduced" \
 	'(.spec.rules[] | select(.name == "generate-default-deny").preconditions) = {"all": [{"key": "{{request.object.metadata.name}}", "operator": "Equals", "value": "never-match"}]}'
 run_platform_mutation "generated DNS TCP allowance removed" \
 	'del(.spec.rules[] | select(.name == "generate-allow-dns").generate.data.spec.egress[0].toPorts[0].ports[] | select(.protocol == "TCP"))'
+run_platform_mutation "generated DNS deny override introduced" \
+	'(.spec.rules[] | select(.name == "generate-allow-dns").generate.data.spec.egressDeny) = [{"toEntities": ["all"]}]'
 run_platform_mutation "standard default-deny kind changed" \
 	'(.spec.rules[] | select(.name == "generate-default-deny-networkpolicy").generate.kind) = "CiliumNetworkPolicy"'
 run_scaffold_mutation "Gateway ingress allowance removed" \
@@ -375,7 +425,11 @@ run_service_mutation "Service selector diverged from workload labels" \
 	'.spec.selector."app.kubernetes.io/name" = "other-app"'
 run_http_route_mutation "HTTPRoute detached from the Platform Gateway" \
 	'.spec.parentRefs[0].name = "other-gateway"'
+run_http_route_mutation "HTTPRoute backend moved to another namespace" \
+	'.spec.rules[0].backendRefs[0].namespace = "other-namespace"'
+run_http_route_mutation "HTTPRoute backend changed from a core Service" \
+	'.spec.rules[0].backendRefs[0] *= {"group": "apps", "kind": "Deployment"}'
 run_rendered_scaffold_mutation "Kustomize patch removed rendered Gateway allowance" \
 	'.patches = [{"target": {"kind": "CiliumNetworkPolicy", "name": "app"}, "patch": "- op: remove\n  path: /spec/ingress/0"}]'
 
-echo "PASS: Platform network floor (generated policies + tenant allows + 18 safety mutations)"
+echo "PASS: Platform network floor (generated policies + tenant allows + 23 safety mutations)"
