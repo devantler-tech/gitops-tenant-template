@@ -266,6 +266,8 @@ jobs:
         run: sh scripts/tenant-rbac-contract.test.sh
       - name: 🧭 Validate Platform tenant-envelope contract
         run: sh scripts/platform-tenant-envelope-contract.test.sh
+      - name: 🌐 Validate Platform network-floor contract
+        run: sh scripts/platform-network-floor-contract.test.sh
 
   # Platform admissibility gate (#71, epic #6 theme 4): the scaffold's promise is
   # "admissible on day one", so apply the platform's LIVE Kyverno admission policy
@@ -274,9 +276,10 @@ jobs:
   # this gate exists to track the live admission truth — drift IS the signal — the
   # mirror of the schema job's pinned-catalog rationale, where determinism wins.
   # Scope notes: PodSecurity (namespace-label PSA) is not checkable offline and is
-  # out of scope here; generate rules and mutate-existing rules are filtered out —
-  # they act on cluster state, require a live client, and never reject an applied
-  # manifest.
+  # out of scope for the Kyverno apply below; generate rules and mutate-existing
+  # rules are filtered out — they act on cluster state, require a live client,
+  # and never reject an applied manifest. The generated namespace network floor
+  # is checked structurally against the scaffold immediately before that apply.
   #
   # Only `ClusterPolicy` resources are applied. The platform also ships CEL
   # `ImageValidatingPolicy` resources (`verify-app-images`, `verify-ksail-images`),
@@ -326,6 +329,8 @@ jobs:
           persist-credentials: false
       - name: 🧭 Validate Platform tenant envelope
         run: sh scripts/platform-tenant-envelope.test.sh
+      - name: 🌐 Validate Platform network floor
+        run: sh scripts/platform-network-floor.test.sh
       - name: 🛂 Apply admission policies to the rendered scaffold
         id: apply-admission-policies
         run: |

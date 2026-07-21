@@ -60,7 +60,7 @@ validate_contract() {
 		'add-default-deny.yaml' \
 		'generate-default-deny' \
 		'generate-allow-dns' \
-		'generate-standard-network-policy' \
+		'generate-default-deny-networkpolicy' \
 		'ingressDeny' \
 		'egressDeny' \
 		'fromEntities' \
