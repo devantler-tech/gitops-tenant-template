@@ -72,10 +72,11 @@ scope_before="$(cat "$scope_fixture")"
 
 # A tenant may add arbitrary custom hostnames beside the two Platform domains.
 # The helper must leave those values byte-identical.
-# Include the reserved token in an unrelated hostname so a future broad
-# replacement (for example, replacing every "app") is rejected by this test.
-custom_hostname="custom-app.example.com"
-yq eval ".spec.hostnames += [\"${custom_hostname}\"]" \
+# Include both complete Platform suffixes plus a prefixed reserved token so a
+# substring replacement is rejected, not only a replacement of every "app".
+custom_local_hostname="custom-app.platform.lan"
+custom_prod_hostname="custom-app.platform.devantler.tech"
+yq eval ".spec.hostnames += [\"${custom_local_hostname}\", \"${custom_prod_hostname}\"]" \
 	"$deploy/httproute.yaml" > "$deploy/httproute-with-custom.yaml"
 mv "$deploy/httproute-with-custom.yaml" "$deploy/httproute.yaml"
 
@@ -99,8 +100,10 @@ printf '%s\n' "$all" | grep -qF "${NAME}.platform.lan" ||
 	fail "HTTPRoute hostname app.platform.lan not renamed"
 printf '%s\n' "$all" | grep -qF "${NAME}.platform.devantler.tech" ||
 	fail "HTTPRoute hostname app.platform.devantler.tech not renamed"
-printf '%s\n' "$all" | grep -qF "${custom_hostname}" ||
-	fail "custom HTTPRoute hostname was changed by the Platform-domain rename"
+for custom_hostname in "$custom_local_hostname" "$custom_prod_hostname"; do
+	printf '%s\n' "$all" | grep -qF "${custom_hostname}" ||
+		fail "custom HTTPRoute hostname was changed by the Platform-domain rename"
+done
 
 # 3) The `app.kubernetes.io/name` label KEY is preserved; only its VALUE changed.
 printf '%s\n' "$all" | grep -qF "app.kubernetes.io/name: ${NAME}" ||
