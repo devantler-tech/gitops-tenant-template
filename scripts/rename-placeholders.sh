@@ -5,7 +5,7 @@
 # value — your tenant (repository) name:
 #   • `app`       — the example app/resource name (Deployment, Service, the
 #                   `app.kubernetes.io/name` label *value*, HTTPRoute, the CNPG
-#                   Cluster, its database/owner, and the example hostname).
+#                   Cluster, its database/owner, and the Platform hostnames).
 #   • REPLACE_ME  — the container image and OpenBao path.
 #   • replace-me  — the tenant's Vault role and ServiceAccount.
 # (Per the template convention the Deployment container `name` MUST equal the
@@ -51,8 +51,9 @@ for f in "$deploy_dir"/*.yaml; do
   [ -f "$f" ] || continue
   tmp="$f.rename.$$"
   # Order matters: the longer CNPG-secret suffix is handled before `app-db`, and
-  # every `app*` rule is anchored to a YAML *value* position (": …$" / list item)
-  # so neither the label key nor prose/comments are touched.
+  # every `app*` rule is anchored to a complete YAML *value* (": …$" or an
+  # exact list item, optionally followed by a comment), so label keys, custom
+  # hostnames, and prose/comments are not touched.
   sed \
     -e "s/REPLACE_ME/$name/g" \
     -e "/^[[:space:]]*kubernetes:[[:space:]]*$/,/^[[:space:]]*serviceAccountRef:[[:space:]]*$/s/^\([[:space:]]*role:[[:space:]]*\)\"replace-me\"$/\1\"$name\"/" \
@@ -60,7 +61,10 @@ for f in "$deploy_dir"/*.yaml; do
     -e "s/: app-db-app\$/: $name-db-app/" \
     -e "s/: app-db\$/: $name-db/" \
     -e "s/: app-secrets\$/: $name-secrets/" \
-    -e "s/app\\.platform\\.lan/$name.platform.lan/" \
+    -e "s/^\\([[:space:]]*-[[:space:]]*\\)app\\.platform\\.lan$/\\1$name.platform.lan/" \
+    -e "s/^\\([[:space:]]*-[[:space:]]*\\)app\\.platform\\.lan\\([[:space:]]*#.*\\)$/\\1$name.platform.lan\\2/" \
+    -e "s/^\\([[:space:]]*-[[:space:]]*\\)app\\.platform\\.devantler\\.tech$/\\1$name.platform.devantler.tech/" \
+    -e "s/^\\([[:space:]]*-[[:space:]]*\\)app\\.platform\\.devantler\\.tech\\([[:space:]]*#.*\\)$/\\1$name.platform.devantler.tech\\2/" \
     -e "s/: app\$/: $name/" \
     "$f" > "$tmp"
   if cmp -s "$f" "$tmp"; then

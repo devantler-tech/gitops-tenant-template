@@ -11,7 +11,8 @@ spec:
       namespace: kube-system
       sectionName: https
   hostnames:
-    - app.platform.lan # replace with your tenant's hostname
+    - app.platform.lan # local
+    - app.platform.devantler.tech # production
   rules:
     - backendRefs:
         - name: app
