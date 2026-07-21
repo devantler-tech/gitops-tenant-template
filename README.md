@@ -55,11 +55,12 @@ tenant still carrying these from an older sync can delete them for good):**
 
 | File | Purpose |
 |---|---|
-| `.github/workflows/validate-scaffold.yaml` | Renders `deploy/`, schema-validates every resource, applies the live Platform/shared Kyverno policies, and exercises a pinned Kubernetes API. The live checks prove the Deployment passes Pod Security `restricted`, the Platform tenant identity can reconcile every rendered kind, and cluster-scoped or interactive privileges remain denied. It gates template PRs and rechecks upstream admission/RBAC drift every Monday at 06:17 UTC (or on manual dispatch); structural mutation tests keep every layer fail-closed. The workflow no-ops in tenants and is scaffold-time only |
+| `.github/workflows/validate-scaffold.yaml` | Renders `deploy/`, schema-validates every resource, applies the live Platform/shared Kyverno policies, and exercises a pinned Kubernetes API. The live checks prove Platform still creates the managed `restricted` namespace, binds `tenant-edit`, and configures Flux to impersonate and target that tenant for both KRO and manual registrations; they then prove the Deployment passes Pod Security `restricted`, the tenant identity can reconcile every rendered kind, and cluster-scoped or interactive privileges remain denied. It gates template PRs and rechecks upstream drift every Monday at 06:17 UTC (or on manual dispatch); structural mutation tests keep every layer fail-closed. The workflow no-ops in tenants and is scaffold-time only |
 | `scripts/rename-placeholders.sh` (+ its test) | One-shot rename of the placeholder app to your tenant name |
 | `scripts/agent-instructions.test.sh` | Fails closed if the one-time agent scaffold loses its ownership, bot, external-code, exact-head review, or user-path evaluation boundaries |
 | `scripts/pod-security-admission*.test.sh` | Proves the rendered Deployment is accepted at Pod Security `restricted` while unsafe mutations are denied, and pins that live gate against structural bypasses |
 | `scripts/tenant-rbac*.test.sh` | Proves the Platform tenant reconciliation identity can manage every rendered scaffold resource while cluster-scoped and interactive privileges stay denied |
+| `scripts/platform-tenant-envelope*.test.sh` | Binds those workload-level models to Platform's live KRO and manual tenant registrations: managed Pod Security namespace, `tenant-edit` ServiceAccount binding, and Flux impersonation plus target namespace |
 
 **Yours (list these in `.templatesyncignore`):**
 
@@ -87,6 +88,8 @@ scripts/pod-security-admission.test.sh
 scripts/pod-security-admission-contract.test.sh
 scripts/tenant-rbac.test.sh
 scripts/tenant-rbac-contract.test.sh
+scripts/platform-tenant-envelope.test.sh
+scripts/platform-tenant-envelope-contract.test.sh
 .github/workflows/validate-scaffold.yaml
 ```
 
@@ -117,5 +120,6 @@ sh scripts/rename-placeholders.test.sh                # onboarding contract
 sh scripts/agent-instructions.test.sh                 # agent safety contract
 sh scripts/pod-security-admission-contract.test.sh    # Pod Security workflow contract
 sh scripts/tenant-rbac-contract.test.sh               # Platform tenant RBAC workflow contract
+sh scripts/platform-tenant-envelope-contract.test.sh  # live Platform tenant-envelope contract
 actionlint .github/workflows/*                         # workflows parse
 ```
