@@ -115,7 +115,7 @@ spec:
               type: RuntimeDefault
           resources:
             requests:
-              cpu: 10m
+              cpu: 50m
               memory: 64Mi
             limits:
               memory: 256Mi
