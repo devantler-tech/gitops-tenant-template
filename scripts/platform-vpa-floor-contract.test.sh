@@ -10,11 +10,13 @@ runtime=$repo_root/scripts/platform-vpa-floor.test.sh
 readme=$repo_root/README.md
 template_sync_ignore=$repo_root/.templatesyncignore
 
+# Report a structural contract violation and stop the current validation path.
 fail() {
 	echo "FAIL: $*" >&2
 	exit 1
 }
 
+# Validate the workflow, runtime, documentation, and ownership markers as one contract.
 validate_contract() {
 	workflow_file=$1
 	runtime_file=$2
@@ -114,6 +116,7 @@ validate_contract "$workflow" "$runtime" "$readme" "$template_sync_ignore"
 mutation_dir=$(mktemp -d)
 trap 'rm -rf "$mutation_dir"' EXIT
 
+# Apply one isolated mutation and require the structural validator to reject it.
 run_mutation() {
 	description=$1
 	workflow_mutation=$2

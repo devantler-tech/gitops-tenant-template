@@ -5,11 +5,13 @@ set -eu
 script_dir=$(CDPATH='' cd -P -- "$(dirname -- "$0")" && pwd)
 repo_root=$(dirname -- "$script_dir")
 
+# Report a VPA-floor contract violation and stop the current validation path.
 fail() {
 	echo "FAIL: $*" >&2
 	exit 1
 }
 
+# Parse a positive canonical millicore quantity and print its numeric value.
 millicores() {
 	cpu_quantity=$1
 	case "$cpu_quantity" in
@@ -25,6 +27,7 @@ millicores() {
 	esac
 }
 
+# Derive Platform's unique Deployment VPA floor and enforce it on the scaffold.
 validate_vpa_floor() {
 	platform_root=$1
 	scaffold_root=$2
@@ -96,6 +99,7 @@ mkdir -p "$mutation_dir/platform/$(dirname -- "$platform_policy_rel")" "$mutatio
 cp "$platform_root/$platform_policy_rel" "$mutation_dir/platform/$platform_policy_rel"
 cp "$repo_root/deploy/deployment.yaml" "$mutation_dir/scaffold/deploy/deployment.yaml"
 
+# Rebuild pristine fixtures, apply one mutation, and require validation to reject it.
 run_mutation() {
 	description=$1
 	platform_mutation=$2
