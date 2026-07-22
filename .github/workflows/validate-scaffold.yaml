@@ -15,7 +15,7 @@ permissions: {}
 # Template-repo-only scaffold-integrity gate. The deploy/ Kustomize manifests are
 # this template's core deliverable — every new tenant inherits them — so a PR that
 # breaks the kustomization (a renamed/removed resource, a YAML error) must not
-# merge green and ship broken scaffolding downstream. Six layers run here:
+# merge green and ship broken scaffolding downstream. Seven layers run here:
 #   1. schema-validate the deploy/ manifests (a typo'd CRD field that renders
 #      without complaint must fail loudly), and
 #   2. exercise scripts/rename-placeholders.sh — the onboarding script every new
@@ -35,6 +35,8 @@ permissions: {}
 #      Tenant and a manual registration.
 #   6. pin the default tenant PR gate so adopters cannot merge an image that
 #      fails to build or a deploy/ tree that fails to render.
+#   7. bind the renamed scaffold's OpenBao role, ServiceAccount, and secret path
+#      to Platform's exact tenant policy and Kubernetes-auth role.
 # This job runs ONLY in the template repo; it no-ops in tenants created from it
 # (the guard below is false there), mirroring how cd.yaml/release.yaml run only in
 # tenants. Tenants replace deploy/ with their own app and validate it via their
@@ -327,6 +329,7 @@ jobs:
           sparse-checkout: |
             k8s/bases/infrastructure/cluster-policies
             k8s/bases/infrastructure/resource-graph-definitions/tenant
+            k8s/bases/infrastructure/vault-config
             k8s/bases/apps/ascoachingogvaner
             k8s/clusters/local/bootstrap/config-map.yaml
             k8s/clusters/prod/bootstrap/config-map.yaml
