@@ -15,7 +15,7 @@ permissions: {}
 # Template-repo-only scaffold-integrity gate. The deploy/ Kustomize manifests are
 # this template's core deliverable — every new tenant inherits them — so a PR that
 # breaks the kustomization (a renamed/removed resource, a YAML error) must not
-# merge green and ship broken scaffolding downstream. Four layers run here:
+# merge green and ship broken scaffolding downstream. Six layers run here:
 #   1. schema-validate the deploy/ manifests (a typo'd CRD field that renders
 #      without complaint must fail loudly), and
 #   2. exercise scripts/rename-placeholders.sh — the onboarding script every new
@@ -33,6 +33,8 @@ permissions: {}
 #      cosign-verifying OCI source, Namespace labels, tenant-edit binding, and
 #      Flux source/impersonation/target relationships supplied by both the KRO
 #      Tenant and a manual registration.
+#   6. pin the default tenant PR gate so adopters cannot merge an image that
+#      fails to build or a deploy/ tree that fails to render.
 # This job runs ONLY in the template repo; it no-ops in tenants created from it
 # (the guard below is false there), mirroring how cd.yaml/release.yaml run only in
 # tenants. Tenants replace deploy/ with their own app and validate it via their
@@ -262,6 +264,10 @@ jobs:
         # These files become tenant-owned immediately after creation, so a stale
         # trust or promotion rule cannot be repaired by template sync later.
         run: sh scripts/agent-instructions.test.sh
+      - name: 🧪 Validate default tenant CI contract
+        # ci.yaml becomes tenant-owned after adoption. Pin the delivery-input
+        # checks that must survive when the placeholder stack job is replaced.
+        run: sh scripts/tenant-ci-contract.test.sh
       - name: 🛡️ Validate Pod Security admission contract
         run: sh scripts/pod-security-admission-contract.test.sh
       - name: 🔐 Validate tenant RBAC contract

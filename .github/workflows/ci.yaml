@@ -8,8 +8,9 @@ permissions: {}
 
 # This is an EXAMPLE CI workflow. Replace the `example` job with your stack's
 # lint / type-check / test / build jobs, and list every job your tenant adds in
-# the `ci-required-checks` aggregator below. This file is yours to own — add it
-# to `.templatesyncignore` so template-sync never overwrites your stack's CI.
+# the `ci-required-checks` aggregator below. Keep `delivery-inputs`: it validates
+# the two tenant-owned artifacts that CD publishes. This file is yours to own —
+# add it to `.templatesyncignore` so template-sync never overwrites your stack's CI.
 jobs:
   example:
     name: Example
@@ -19,14 +20,35 @@ jobs:
       - name: Placeholder
         run: echo "Replace this job with your stack's lint, test, and build steps."
 
+  delivery-inputs:
+    name: Delivery inputs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout only; tenant code runs without secrets or write authority
+    steps:
+      - name: 🔒 Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - name: 📥 Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: 🐳 Build tenant image
+        run: docker build --tag tenant-delivery-check .
+      - name: 🧱 Render tenant manifests
+        run: kubectl kustomize deploy/ >/dev/null
+
   ci-required-checks:
     name: CI - Required Checks
     runs-on: ubuntu-latest
-    needs: [example]
+    needs: [example, delivery-inputs]
     permissions: {}
     if: ${{ always() }}
     steps:
       - name: 📊 Require all CI checks to pass
         uses: devantler-tech/actions/aggregate-job-checks@47f0d9b632581a613963a2d25c243713f24c32a0 # v10.1.0
         with:
-          job-results: ${{ needs.example.result }}
+          job-results: >-
+            ${{ needs.example.result }}
+            ${{ needs.delivery-inputs.result }}

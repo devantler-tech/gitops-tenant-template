@@ -33,10 +33,16 @@ fill in the scaffolding.
    its name, production URL, and pod selector; tailor the tile's description,
    group, and icon annotations after the rename to describe your app.
 3. Replace the rest of the scaffolding with your app: application code,
-   `Dockerfile`, the `ci.yaml` jobs, and fill in `AGENTS.md`.
+   `Dockerfile`, the example stack job in `ci.yaml`, and fill in `AGENTS.md`.
 4. Create `.templatesyncignore` (see below).
 5. Register the tenant on the platform — follow
    [`platform/docs/TENANTS.md`](https://github.com/devantler-tech/platform/blob/main/docs/TENANTS.md).
+
+Default PR CI always builds the tenant image and renders `deploy/` before merge,
+using no secrets or write authority. Keep the `delivery-inputs` job and its entry
+in `ci-required-checks` when you replace the example job with your stack's lint,
+test, and build commands. This catches the same image and manifest failures in
+the pull request that introduced them instead of during release or reconciliation.
 
 ## What the template owns vs. what you own
 
@@ -65,6 +71,7 @@ tenant still carrying these from an older sync can delete them for good):**
 | `.github/workflows/validate-scaffold.yaml` | Renders `deploy/`, schema-validates every resource, applies the live Platform/shared Kyverno policies, and exercises a pinned Kubernetes API. The live checks prove the template publishes through the pinned signing workflow; Platform still wires the private GHCR pull credential to the tenant identity and cosign-verifying OCI source; and Flux consumes that source while impersonating and targeting the managed `restricted` namespace for both KRO and manual registrations. They then prove the Deployment passes Pod Security `restricted`, the tenant identity can reconcile every rendered kind, and cluster-scoped or interactive privileges remain denied. It gates template PRs and rechecks upstream drift every Monday at 06:17 UTC (or on manual dispatch); structural mutation tests keep every layer fail-closed. The workflow no-ops in tenants and is scaffold-time only |
 | `scripts/rename-placeholders.sh` (+ its test) | One-shot rename of the placeholder app to your tenant name |
 | `scripts/agent-instructions.test.sh` | Fails closed if the one-time agent scaffold loses its ownership, bot, external-code, exact-head review, or user-path evaluation boundaries |
+| `scripts/tenant-ci-contract.test.sh` | Keeps default tenant PR CI least-privilege and fail-closed over both the image build and rendered manifests |
 | `scripts/pod-security-admission*.test.sh` | Proves the rendered Deployment is accepted at Pod Security `restricted` while unsafe mutations are denied, and pins that live gate against structural bypasses |
 | `scripts/tenant-rbac*.test.sh` | Proves the Platform tenant reconciliation identity can manage every rendered scaffold resource while cluster-scoped and interactive privileges stay denied |
 | `scripts/platform-tenant-envelope*.test.sh` | Binds the template's signed publisher and those workload-level models to Platform's live KRO and manual tenant registrations: private GHCR pull identity, cosign-verifying OCI source, managed Pod Security namespace, `tenant-edit` ServiceAccount binding, and Flux source, impersonation, and target namespace |
@@ -92,6 +99,7 @@ deploy/
 scripts/rename-placeholders.sh
 scripts/rename-placeholders.test.sh
 scripts/agent-instructions.test.sh
+scripts/tenant-ci-contract.test.sh
 scripts/pod-security-admission.test.sh
 scripts/pod-security-admission-contract.test.sh
 scripts/tenant-rbac.test.sh
