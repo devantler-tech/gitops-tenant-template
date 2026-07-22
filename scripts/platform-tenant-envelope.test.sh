@@ -109,7 +109,7 @@ validate_openbao_authorization() (
 	[ "$policy_block" = "$expected_policy_block" ] ||
 		fail "Platform tenant OpenBao policy no longer has the exact data/metadata scope and capabilities"
 
-	role_header="bao write auth/kubernetes/role/$tenant_name"
+	role_header="bao write auth/kubernetes/role/$tenant_name \\"
 	role_count=$(grep -Fc -- "$role_header" "$vault_config")
 	[ "$role_count" -eq 1 ] ||
 		fail "Platform must declare the tenant OpenBao Kubernetes-auth role exactly once"
@@ -419,6 +419,20 @@ run_vault_duplicate() {
 	fi
 }
 
+run_vault_prefixed_role_control() {
+	description=$1
+	mutant=$mutation_dir/vault-prefixed-role
+	rm -rf "$mutant"
+	cp -R "$baseline" "$mutant"
+	vault_mutant=$mutant/k8s/bases/infrastructure/vault-config/job.yaml
+	sed 's|auth/kubernetes/role/wedding-app|auth/kubernetes/role/ascoachingogvaner-legacy|' \
+		"$vault_mutant" > "$mutation_dir/vault-prefixed-role.yaml"
+	mv "$mutation_dir/vault-prefixed-role.yaml" "$vault_mutant"
+	if ! (validate_platform "$mutant") >/dev/null 2>&1; then
+		fail "OpenBao authorization compatibility control failed: $description"
+	fi
+}
+
 run_scaffold_mutation() {
 	description=$1
 	relative_file=$2
@@ -457,6 +471,7 @@ run_vault_duplicate "tenant policy declared twice" \
 	"bao policy write app-ascoachingogvaner - <<'POLICY'" 'POLICY'
 run_vault_duplicate "tenant Kubernetes-auth role declared twice" \
 	'bao write auth/kubernetes/role/ascoachingogvaner' 'ttl=1h'
+run_vault_prefixed_role_control "another tenant role starts with this tenant name"
 run_scaffold_mutation "scaffold OpenBao role changed" deploy/secretstore.yaml \
 	'.spec.provider.vault.auth.kubernetes.role = "another-tenant"'
 run_scaffold_mutation "scaffold OpenBao ServiceAccount changed" deploy/secretstore.yaml \
