@@ -30,6 +30,11 @@ validate_contract() {
 		fi
 	}
 
+	assert_ci "workflow must run on every pull request to main" '
+		((.on | keys | sort | join(",")) == "pull_request")
+		and ((.on.pull_request | keys | sort | join(",")) == "branches")
+		and ((.on.pull_request.branches | join(",")) == "main")
+	'
 	assert_ci "workflow permissions must default to none" \
 		'(has("permissions")) and ((.permissions | type) == "!!map") and ((.permissions | length) == 0)'
 	assert_ci "workflow must not expose inherited environment values" \
@@ -244,6 +249,14 @@ run_mutation() {
 
 run_mutation "delivery job removed" \
 	'del(.jobs."delivery-inputs")'
+run_mutation "pull-request trigger removed" \
+	'del(.on.pull_request)'
+run_mutation "pull-request target replaced" \
+	'.on.pull_request.branches = ["develop"]'
+run_mutation "pull-request paths narrowed" \
+	'.on.pull_request.paths = ["src/**"]'
+run_mutation "pull-request paths ignored" \
+	'.on.pull_request."paths-ignore" = ["deploy/**"]'
 run_mutation "workflow permissions default removed" \
 	'del(.permissions)'
 # shellcheck disable=SC2016
@@ -313,4 +326,4 @@ run_mutation "scaffolded validation invariant removed" '' '' '' \
 run_mutation "contract ignore removed" '' '' '' '' \
 	'/^scripts\/tenant-ci-contract\.test\.sh$/d'
 
-echo "PASS: tenant CI contract (happy path + 31 safety mutations)"
+echo "PASS: tenant CI contract (happy path + 35 safety mutations)"
