@@ -4,6 +4,16 @@ metadata:
   name: app
   labels:
     app.kubernetes.io/name: app
+  # Homepage discovers tenant routes cluster-wide. The rename helper updates
+  # the app identity below; tailor the description, group, and icon afterward.
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: app
+    gethomepage.dev/description: Tenant application.
+    gethomepage.dev/group: Applications
+    gethomepage.dev/icon: mdi-application
+    gethomepage.dev/href: https://app.platform.devantler.tech
+    gethomepage.dev/pod-selector: app.kubernetes.io/name=app
 spec:
   # Attaches to the shared platform Gateway (Cilium, in kube-system).
   parentRefs:

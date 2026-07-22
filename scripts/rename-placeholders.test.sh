@@ -10,8 +10,8 @@
 # This test pins the script's real, subtle behaviour:
 #   * REPLACE_ME values (the image and the OpenBao KV path) are repointed,
 #   * every `app`-as-a-VALUE is renamed (resource names, label values, hostnames,
-#     the CNPG database/owner), while the `app.kubernetes.io/name` label *KEY* is
-#     left intact (only its value changes),
+#     Homepage discovery identity, and the CNPG database/owner), while the
+#     `app.kubernetes.io/name` label *KEY* is left intact (only its value changes),
 #   * CloudNativePG's literal `-app` Secret suffix is preserved (`app-db-app`
 #     becomes `<name>-db-app`, NOT `<name>-db-<name>`),
 #   * the shared `openbao` SecretStore name is NOT renamed,
@@ -60,6 +60,30 @@ done
 [ "$(cat "$deploy"/*.yaml)" = "$snapshot_before" ] ||
 	fail "a rejected invocation modified deploy/ — guardrails must bail out first"
 
+homepage_route_contract() {
+	yq eval -e '
+		.metadata.annotations."gethomepage.dev/enabled" == "true" and
+		.metadata.annotations."gethomepage.dev/name" == "app" and
+		.metadata.annotations."gethomepage.dev/description" == "Tenant application." and
+		.metadata.annotations."gethomepage.dev/group" == "Applications" and
+		.metadata.annotations."gethomepage.dev/icon" == "mdi-application" and
+		.metadata.annotations."gethomepage.dev/href" == "https://app.platform.devantler.tech" and
+		.metadata.annotations."gethomepage.dev/pod-selector" == "app.kubernetes.io/name=app"
+	' "$1" >/dev/null 2>&1
+}
+
+homepage_route_contract "$deploy/httproute.yaml" ||
+	fail "scaffold HTTPRoute does not expose the complete Homepage discovery contract"
+
+for annotation in href pod-selector; do
+	mutant="${work}/homepage-${annotation}-mutant.yaml"
+	yq eval "del(.metadata.annotations.\"gethomepage.dev/${annotation}\")" \
+		"$deploy/httproute.yaml" > "$mutant"
+	if homepage_route_contract "$mutant"; then
+		fail "Homepage contract accepted a route without gethomepage.dev/${annotation}"
+	fi
+done
+
 # Add unrelated YAML fields that use the same literal values. The onboarding
 # helper must only rename the SecretStore tenant identity, not every role/name
 # key it happens to encounter in deploy/.
@@ -76,7 +100,13 @@ scope_before="$(cat "$scope_fixture")"
 # substring replacement is rejected, not only a replacement of every "app".
 custom_local_hostname="custom-app.platform.lan"
 custom_prod_hostname="custom-app.platform.devantler.tech"
-yq eval ".spec.hostnames += [\"${custom_local_hostname}\", \"${custom_prod_hostname}\"]" \
+custom_description="Custom tenant presentation."
+custom_group="Custom applications"
+custom_icon="mdi-test-tube"
+yq eval ".spec.hostnames += [\"${custom_local_hostname}\", \"${custom_prod_hostname}\"] |
+	.metadata.annotations.\"gethomepage.dev/description\" = \"${custom_description}\" |
+	.metadata.annotations.\"gethomepage.dev/group\" = \"${custom_group}\" |
+	.metadata.annotations.\"gethomepage.dev/icon\" = \"${custom_icon}\"" \
 	"$deploy/httproute.yaml" > "$deploy/httproute-with-custom.yaml"
 mv "$deploy/httproute-with-custom.yaml" "$deploy/httproute.yaml"
 
@@ -103,6 +133,20 @@ printf '%s\n' "$all" | grep -qF "${NAME}.platform.devantler.tech" ||
 for custom_hostname in "$custom_local_hostname" "$custom_prod_hostname"; do
 	printf '%s\n' "$all" | grep -qF "${custom_hostname}" ||
 		fail "custom HTTPRoute hostname was changed by the Platform-domain rename"
+done
+
+for field_and_value in \
+	"name=${NAME}" \
+	"href=https://${NAME}.platform.devantler.tech" \
+	"pod-selector=app.kubernetes.io/name=${NAME}" \
+	"description=${custom_description}" \
+	"group=${custom_group}" \
+	"icon=${custom_icon}"; do
+	field="${field_and_value%%=*}"
+	expected="${field_and_value#*=}"
+	actual="$(yq eval ".metadata.annotations.\"gethomepage.dev/${field}\"" "$deploy/httproute.yaml")"
+	[ "$actual" = "$expected" ] ||
+		fail "Homepage ${field} expected '${expected}' after rename, found '${actual}'"
 done
 
 # 3) The `app.kubernetes.io/name` label KEY is preserved; only its VALUE changed.

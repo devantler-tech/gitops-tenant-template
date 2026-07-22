@@ -29,6 +29,9 @@ fill in the scaffolding.
    locally and `<tenant>.platform.devantler.tech` in production. Keep both in
    `deploy/httproute.yaml`; add any custom domains beside them. Each Platform
    Gateway attaches only the hostnames its listener serves.
+   The route also publishes a tile to the Platform Homepage. The helper updates
+   its name, production URL, and pod selector; tailor the tile's description,
+   group, and icon annotations after the rename to describe your app.
 3. Replace the rest of the scaffolding with your app: application code,
    `Dockerfile`, the `ci.yaml` jobs, and fill in `AGENTS.md`.
 4. Create `.templatesyncignore` (see below).

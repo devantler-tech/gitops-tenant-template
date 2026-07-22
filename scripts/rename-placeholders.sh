@@ -5,7 +5,8 @@
 # value — your tenant (repository) name:
 #   • `app`       — the example app/resource name (Deployment, Service, the
 #                   `app.kubernetes.io/name` label *value*, HTTPRoute, the CNPG
-#                   Cluster, its database/owner, and the Platform hostnames).
+#                   Cluster, its database/owner, Platform hostnames, and Homepage
+#                   discovery identity).
 #   • REPLACE_ME  — the container image and OpenBao path.
 #   • replace-me  — the tenant's Vault role and ServiceAccount.
 # (Per the template convention the Deployment container `name` MUST equal the
@@ -65,6 +66,8 @@ for f in "$deploy_dir"/*.yaml; do
     -e "s/^\\([[:space:]]*-[[:space:]]*\\)app\\.platform\\.lan\\([[:space:]]*#.*\\)$/\\1$name.platform.lan\\2/" \
     -e "s/^\\([[:space:]]*-[[:space:]]*\\)app\\.platform\\.devantler\\.tech$/\\1$name.platform.devantler.tech/" \
     -e "s/^\\([[:space:]]*-[[:space:]]*\\)app\\.platform\\.devantler\\.tech\\([[:space:]]*#.*\\)$/\\1$name.platform.devantler.tech\\2/" \
+    -e "s|^\\([[:space:]]*gethomepage\\.dev/href:[[:space:]]*https://\\)app\\(\\.platform\\.devantler\\.tech\\)$|\\1$name\\2|" \
+    -e "s|^\\([[:space:]]*gethomepage\\.dev/pod-selector:[[:space:]]*app\\.kubernetes\\.io/name=\\)app$|\\1$name|" \
     -e "s/: app\$/: $name/" \
     "$f" > "$tmp"
   if cmp -s "$f" "$tmp"; then
