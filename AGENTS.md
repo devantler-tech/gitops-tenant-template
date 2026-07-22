@@ -27,7 +27,8 @@ platform Kubernetes cluster as an OCI-packaged Kustomize app.>
 ## Validation
 
 <Mirror CI (`.github/workflows/ci.yaml`) — the lint/test/build commands your stack
-runs. Plus `kubectl kustomize deploy/` for the manifests.>
+runs. Keep its delivery-input gate: build the tenant image and render `deploy/`
+before merge, then include every job in `ci-required-checks`.>
 
 ## Maintenance (autonomous AI engineer)
 
