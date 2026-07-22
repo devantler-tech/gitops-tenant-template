@@ -451,6 +451,8 @@ run_vault_mutation "tenant role ServiceAccount changed" \
 	's/bound_service_account_names=ascoachingogvaner/bound_service_account_names=another-tenant/'
 run_vault_mutation "tenant role namespace changed" \
 	's/bound_service_account_namespaces=ascoachingogvaner/bound_service_account_namespaces=another-tenant/'
+run_vault_mutation "tenant Kubernetes-auth role renamed" \
+	's|auth/kubernetes/role/ascoachingogvaner|auth/kubernetes/role/another-tenant|'
 run_vault_duplicate "tenant policy declared twice" \
 	"bao policy write app-ascoachingogvaner - <<'POLICY'" 'POLICY'
 run_vault_duplicate "tenant Kubernetes-auth role declared twice" \
@@ -575,4 +577,4 @@ run_publish_mutation "branch publication enabled" \
 run_publish_mutation "second package publisher added" \
 	'.jobs.shadow = {"runs-on": "ubuntu-latest", "permissions": {"packages": "write"}, "steps": []}'
 
-echo "PASS: signed tenant artifact envelope (KRO + manual + OpenBao + publisher + 69 safety mutations)"
+echo "PASS: signed tenant artifact envelope (KRO + manual + OpenBao + publisher + 70 safety mutations)"
