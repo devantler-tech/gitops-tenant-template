@@ -136,6 +136,7 @@ only artifacts from this trusted workflow are reconciled.
 kubectl kustomize deploy/                              # manifests build
 sh scripts/rename-placeholders.test.sh                # onboarding contract
 sh scripts/agent-instructions.test.sh                 # agent safety contract
+sh scripts/tenant-ci-contract.test.sh                 # tenant delivery-input CI contract
 sh scripts/pod-security-admission-contract.test.sh    # Pod Security workflow contract
 sh scripts/tenant-rbac-contract.test.sh               # Platform tenant RBAC workflow contract
 sh scripts/platform-tenant-envelope-contract.test.sh  # live Platform tenant-envelope contract

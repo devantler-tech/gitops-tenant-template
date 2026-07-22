@@ -36,8 +36,12 @@ jobs:
           persist-credentials: false
       - name: 🐳 Build tenant image
         run: docker build --tag tenant-delivery-check .
+        shell: bash
+        working-directory: .
       - name: 🧱 Render tenant manifests
         run: kubectl kustomize deploy/ >/dev/null
+        shell: bash
+        working-directory: .
 
   ci-required-checks:
     name: CI - Required Checks
@@ -52,3 +56,9 @@ jobs:
           job-results: >-
             ${{ needs.example.result }}
             ${{ needs.delivery-inputs.result }}
+      # aggregate-job-checks deliberately tolerates skipped dependencies. A
+      # stable required check must fail unless every named tenant job ran.
+      - name: Reject incomplete CI jobs
+        if: ${{ needs.example.result != 'success' || needs.delivery-inputs.result != 'success' }}
+        run: exit 1
+        shell: bash
