@@ -39,7 +39,7 @@ validate_contract() {
 				and ((.with."sparse-checkout" | split("\n") | join("|")) ==
 					"k8s/bases/infrastructure/cluster-policies|" +
 					"k8s/bases/infrastructure/resource-graph-definitions/tenant|" +
-					"k8s/bases/infrastructure/vault-config/job.yaml|" +
+					"k8s/bases/infrastructure/vault-config|" +
 					"k8s/bases/apps/ascoachingogvaner|" +
 					"k8s/clusters/local/bootstrap/config-map.yaml|" +
 					"k8s/clusters/prod/bootstrap/config-map.yaml|")
@@ -216,7 +216,7 @@ run_mutation() {
 run_mutation "Platform RGD checkout removed" \
 	'(.jobs.admissibility.steps[] | select(.with.repository == "devantler-tech/platform").with."sparse-checkout") |= sub("k8s/bases/infrastructure/resource-graph-definitions/tenant\\n"; "")' ''
 run_mutation "Platform OpenBao authorization checkout removed" \
-	'(.jobs.admissibility.steps[] | select(.with.repository == "devantler-tech/platform").with."sparse-checkout") |= sub("k8s/bases/infrastructure/vault-config/job.yaml\\n"; "")' ''
+	'(.jobs.admissibility.steps[] | select(.with.repository == "devantler-tech/platform").with."sparse-checkout") |= sub("k8s/bases/infrastructure/vault-config\\n"; "")' ''
 run_mutation "live envelope invocation removed" \
 	'del(.jobs.admissibility.steps[] | select(.run == "sh scripts/platform-tenant-envelope.test.sh"))' ''
 run_mutation "contract invocation removed" \

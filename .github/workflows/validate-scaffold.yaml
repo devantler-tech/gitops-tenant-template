@@ -329,7 +329,7 @@ jobs:
           sparse-checkout: |
             k8s/bases/infrastructure/cluster-policies
             k8s/bases/infrastructure/resource-graph-definitions/tenant
-            k8s/bases/infrastructure/vault-config/job.yaml
+            k8s/bases/infrastructure/vault-config
             k8s/bases/apps/ascoachingogvaner
             k8s/clusters/local/bootstrap/config-map.yaml
             k8s/clusters/prod/bootstrap/config-map.yaml
