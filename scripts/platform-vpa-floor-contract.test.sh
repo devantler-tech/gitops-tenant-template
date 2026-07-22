@@ -71,6 +71,7 @@ validate_contract() {
 		'Platform floor raised above the scaffold request' \
 		'Platform Deployment VPA rule duplicated' \
 		'Platform Deployment VPA rule duplicated under another name' \
+		'Platform CPU floor removed' \
 		'Platform CPU floor changed to a noncanonical quantity' \
 		'scaffold application container duplicated'
 	do
@@ -163,6 +164,8 @@ run_mutation "Platform checkout pinned away from live main" \
 	'(.jobs.admissibility.steps[] | select(.with.repository == "devantler-tech/platform").with.ref) = "stale-ref"' ''
 run_mutation "runtime comparison removed" '' '/resources.requests.cpu/d'
 run_mutation "runtime mutation controls removed" '' '/run_mutation/d'
+run_mutation "Platform CPU floor removal control removed" '' \
+	'/^run_mutation "Platform CPU floor removed"/{N;d;}'
 # shellcheck disable=SC2016
 run_mutation "README ownership marker removed" '' '' \
 	'/`scripts\/platform-vpa-floor\*\.test\.sh`/d'
@@ -173,4 +176,4 @@ run_mutation "README runtime ownership marker removed" '' '' \
 run_mutation ".templatesyncignore contract marker removed" '' '' '' \
 	'/^scripts\/platform-vpa-floor-contract\.test\.sh$/d'
 
-echo "PASS: Platform VPA-floor structural contract (happy path + 11 safety mutations)"
+echo "PASS: Platform VPA-floor structural contract (happy path + 12 safety mutations)"
