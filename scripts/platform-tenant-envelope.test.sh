@@ -47,9 +47,93 @@ validate_publish_workflow() {
 		fail "tenant publish workflow no longer has the pinned minimal signing contract"
 }
 
+validate_openbao_authorization() (
+	platform_root=$1
+	scaffold_root=$2
+	tenant_name=$3
+	vault_config=$platform_root/k8s/bases/infrastructure/vault-config/job.yaml
+	rename_script=$scaffold_root/scripts/rename-placeholders.sh
+
+	for required_file in \
+		"$vault_config" \
+		"$rename_script" \
+		"$scaffold_root/deploy/secretstore.yaml" \
+		"$scaffold_root/deploy/externalsecret.yaml"
+	do
+		[ -f "$required_file" ] || fail "OpenBao authorization source is missing: $required_file"
+	done
+
+	renamed_scaffold=$(mktemp -d)
+	trap 'rm -rf "$renamed_scaffold"' EXIT
+	mkdir -p "$renamed_scaffold/scripts"
+	cp -R "$scaffold_root/deploy" "$renamed_scaffold/deploy"
+	cp "$rename_script" "$renamed_scaffold/scripts/rename-placeholders.sh"
+	sh "$renamed_scaffold/scripts/rename-placeholders.sh" "$tenant_name" >/dev/null
+
+	secret_store=$renamed_scaffold/deploy/secretstore.yaml
+	external_secret=$renamed_scaffold/deploy/externalsecret.yaml
+	expected_remote_key=apps/$tenant_name/config
+	export tenant_name expected_remote_key
+
+	yq eval -e '
+		.kind == "SecretStore"
+		and .spec.provider.vault.auth.kubernetes.role == strenv(tenant_name)
+		and .spec.provider.vault.auth.kubernetes.serviceAccountRef.name == strenv(tenant_name)
+	' "$secret_store" >/dev/null ||
+		fail "renamed scaffold no longer binds its OpenBao role to the tenant ServiceAccount"
+
+	yq eval -e '
+		.kind == "ExternalSecret"
+		and (.spec.data | length) == 1
+		and .spec.data[0].remoteRef.key == strenv(expected_remote_key)
+	' "$external_secret" >/dev/null ||
+		fail "renamed scaffold no longer reads the tenant-scoped OpenBao path"
+
+	policy_header="bao policy write app-$tenant_name - <<'POLICY'"
+	policy_count=$(grep -Fc -- "$policy_header" "$vault_config")
+	[ "$policy_count" -eq 1 ] ||
+		fail "Platform must declare the tenant OpenBao policy exactly once"
+	policy_block=$(awk -v header="$policy_header" '
+		index($0, header) { inside = 1; found = 1; next }
+		inside && /^[[:space:]]*POLICY[[:space:]]*$/ { exit }
+		inside { sub(/^[[:space:]]*/, ""); print }
+		END { if (!found) exit 1 }
+	' "$vault_config") || fail "Platform tenant OpenBao policy is missing"
+	expected_policy_block=$(printf '%s\n' \
+		"path \"secret/data/apps/$tenant_name/*\" {" \
+		'capabilities = ["create", "update", "read"]' \
+		'}' \
+		"path \"secret/metadata/apps/$tenant_name/*\" {" \
+		'capabilities = ["create", "update", "read"]' \
+		'}')
+	[ "$policy_block" = "$expected_policy_block" ] ||
+		fail "Platform tenant OpenBao policy no longer has the exact data/metadata scope and capabilities"
+
+	role_header="bao write auth/kubernetes/role/$tenant_name"
+	role_count=$(grep -Fc -- "$role_header" "$vault_config")
+	[ "$role_count" -eq 1 ] ||
+		fail "Platform must declare the tenant OpenBao Kubernetes-auth role exactly once"
+	role_block=$(awk -v header="$role_header" '
+		index($0, header) { inside = 1; found = 1 }
+		inside { sub(/^[[:space:]]*/, ""); print }
+		inside && $0 == "ttl=1h" { exit }
+		END { if (!found) exit 1 }
+	' "$vault_config") || fail "Platform tenant OpenBao Kubernetes-auth role is missing"
+	expected_role_block=$(printf '%s\n' \
+		"bao write auth/kubernetes/role/$tenant_name \\" \
+		"bound_service_account_names=$tenant_name \\" \
+		"bound_service_account_namespaces=$tenant_name \\" \
+		"policies=app-$tenant_name \\" \
+		'ttl=1h')
+	[ "$role_block" = "$expected_role_block" ] ||
+		fail "Platform tenant OpenBao role no longer binds the exact policy, ServiceAccount, and namespace"
+)
+
 validate_platform() {
 	platform_root=$1
+	scaffold_root=${2:-$repo_root}
 	rgd=$platform_root/k8s/bases/infrastructure/resource-graph-definitions/tenant/resource-graph-definition.yaml
+	vault_config=$platform_root/k8s/bases/infrastructure/vault-config/job.yaml
 	manual_root=$platform_root/k8s/bases/apps/ascoachingogvaner
 	manual_namespace=$manual_root/namespace.yaml
 	manual_service_account=$manual_root/service-account.yaml
@@ -61,6 +145,7 @@ validate_platform() {
 
 	for required_file in \
 		"$rgd" \
+		"$vault_config" \
 		"$manual_namespace" \
 		"$manual_service_account" \
 		"$manual_ghcr_auth" \
@@ -154,6 +239,7 @@ validate_platform() {
 	[ -n "$tenant_name" ] || fail "manual Platform tenant namespace has no name"
 	expected_manual_oci_url=oci://ghcr.io/devantler-tech/$tenant_name/manifests
 	export tenant_name expected_manual_oci_url
+	validate_openbao_authorization "$platform_root" "$scaffold_root" "$tenant_name" || return 1
 
 	# shellcheck disable=SC2016
 	yq eval -e '
@@ -262,6 +348,7 @@ trap 'rm -rf "$mutation_dir"' EXIT
 baseline=$mutation_dir/baseline
 mkdir -p \
 	"$baseline/k8s/bases/infrastructure/resource-graph-definitions" \
+	"$baseline/k8s/bases/infrastructure/vault-config" \
 	"$baseline/k8s/bases/apps"
 cp -R \
 	"$platform_root/k8s/bases/infrastructure/resource-graph-definitions/tenant" \
@@ -269,6 +356,9 @@ cp -R \
 cp -R \
 	"$platform_root/k8s/bases/apps/ascoachingogvaner" \
 	"$baseline/k8s/bases/apps/ascoachingogvaner"
+cp \
+	"$platform_root/k8s/bases/infrastructure/vault-config/job.yaml" \
+	"$baseline/k8s/bases/infrastructure/vault-config/job.yaml"
 
 run_mutation() {
 	description=$1
@@ -294,8 +384,83 @@ run_publish_mutation() {
 	fi
 }
 
+run_vault_mutation() {
+	description=$1
+	mutation=$2
+	mutant=$mutation_dir/vault-mutant
+	rm -rf "$mutant"
+	cp -R "$baseline" "$mutant"
+	vault_mutant=$mutant/k8s/bases/infrastructure/vault-config/job.yaml
+	sed "$mutation" "$vault_mutant" > "$mutation_dir/vault-mutant.yaml"
+	mv "$mutation_dir/vault-mutant.yaml" "$vault_mutant"
+	if (validate_platform "$mutant") >/dev/null 2>&1; then
+		fail "OpenBao authorization mutation passed: $description"
+	fi
+}
+
+run_vault_duplicate() {
+	description=$1
+	header=$2
+	terminator=$3
+	mutant=$mutation_dir/vault-duplicate
+	rm -rf "$mutant"
+	cp -R "$baseline" "$mutant"
+	vault_mutant=$mutant/k8s/bases/infrastructure/vault-config/job.yaml
+	awk -v header="$header" -v terminator="$terminator" '
+		index($0, header) { capture = 1 }
+		{ print }
+		capture { duplicate = duplicate $0 ORS }
+		capture && index($0, terminator) { capture = 0 }
+		END { printf "%s", duplicate }
+	' "$vault_mutant" > "$mutation_dir/vault-duplicate.yaml"
+	mv "$mutation_dir/vault-duplicate.yaml" "$vault_mutant"
+	if (validate_platform "$mutant") >/dev/null 2>&1; then
+		fail "duplicate OpenBao authorization mutation passed: $description"
+	fi
+}
+
+run_scaffold_mutation() {
+	description=$1
+	relative_file=$2
+	mutation=$3
+	mutant=$mutation_dir/scaffold-mutant
+	rm -rf "$mutant"
+	mkdir -p "$mutant/scripts"
+	cp -R "$repo_root/deploy" "$mutant/deploy"
+	cp "$repo_root/scripts/rename-placeholders.sh" "$mutant/scripts/rename-placeholders.sh"
+	yq eval "$mutation" "$mutant/$relative_file" > "$mutation_dir/scaffold-mutant.yaml"
+	mv "$mutation_dir/scaffold-mutant.yaml" "$mutant/$relative_file"
+	if (validate_platform "$platform_root" "$mutant") >/dev/null 2>&1; then
+		fail "renamed scaffold authorization mutation passed: $description"
+	fi
+}
+
 rgd_path=k8s/bases/infrastructure/resource-graph-definitions/tenant/resource-graph-definition.yaml
 manual_path=k8s/bases/apps/ascoachingogvaner
+run_vault_mutation "tenant data path widened" \
+	's|secret/data/apps/ascoachingogvaner/\*|secret/data/apps/*|'
+run_vault_mutation "tenant metadata path crossed into another tenant" \
+	's|secret/metadata/apps/ascoachingogvaner/\*|secret/metadata/apps/wedding-app/*|'
+run_vault_mutation "tenant read capability removed" \
+	'/bao policy write app-ascoachingogvaner/,/^[[:space:]]*POLICY$/s/"create", "update", "read"/"create", "update"/'
+run_vault_mutation "tenant write capabilities removed" \
+	'/bao policy write app-ascoachingogvaner/,/^[[:space:]]*POLICY$/s/"create", "update", "read"/"read"/'
+run_vault_mutation "tenant role policy changed" \
+	's/policies=app-ascoachingogvaner/policies=app-wedding-app/'
+run_vault_mutation "tenant role ServiceAccount changed" \
+	's/bound_service_account_names=ascoachingogvaner/bound_service_account_names=another-tenant/'
+run_vault_mutation "tenant role namespace changed" \
+	's/bound_service_account_namespaces=ascoachingogvaner/bound_service_account_namespaces=another-tenant/'
+run_vault_duplicate "tenant policy declared twice" \
+	"bao policy write app-ascoachingogvaner - <<'POLICY'" 'POLICY'
+run_vault_duplicate "tenant Kubernetes-auth role declared twice" \
+	'bao write auth/kubernetes/role/ascoachingogvaner' 'ttl=1h'
+run_scaffold_mutation "scaffold OpenBao role changed" deploy/secretstore.yaml \
+	'.spec.provider.vault.auth.kubernetes.role = "another-tenant"'
+run_scaffold_mutation "scaffold OpenBao ServiceAccount changed" deploy/secretstore.yaml \
+	'.spec.provider.vault.auth.kubernetes.serviceAccountRef.name = "another-tenant"'
+run_scaffold_mutation "scaffold OpenBao path crossed into another tenant" deploy/externalsecret.yaml \
+	'.spec.data[0].remoteRef.key = "apps/another-tenant/config"'
 run_mutation "KRO managed-by label removed" "$rgd_path" \
 	'del(.spec.resources[] | select(.id == "tenantNamespace").template.metadata.labels."app.kubernetes.io/managed-by")'
 run_mutation "KRO Pod Security level weakened" "$rgd_path" \
@@ -410,4 +575,4 @@ run_publish_mutation "branch publication enabled" \
 run_publish_mutation "second package publisher added" \
 	'.jobs.shadow = {"runs-on": "ubuntu-latest", "permissions": {"packages": "write"}, "steps": []}'
 
-echo "PASS: signed tenant artifact envelope (KRO + manual + publisher + 57 safety mutations)"
+echo "PASS: signed tenant artifact envelope (KRO + manual + OpenBao + publisher + 69 safety mutations)"

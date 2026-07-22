@@ -240,4 +240,4 @@ run_mutation "Pod Security context removed" '' '' \
 run_mutation "RBAC context removed" '' '' '' \
 	'/tenant-edit/d'
 
-echo "PASS: Platform tenant-envelope contract (happy path + 13 safety mutations)"
+echo "PASS: Platform tenant-envelope contract (happy path + 15 safety mutations)"
