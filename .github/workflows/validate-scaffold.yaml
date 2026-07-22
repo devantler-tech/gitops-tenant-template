@@ -15,7 +15,7 @@ permissions: {}
 # Template-repo-only scaffold-integrity gate. The deploy/ Kustomize manifests are
 # this template's core deliverable — every new tenant inherits them — so a PR that
 # breaks the kustomization (a renamed/removed resource, a YAML error) must not
-# merge green and ship broken scaffolding downstream. Seven layers run here:
+# merge green and ship broken scaffolding downstream. Eight layers run here:
 #   1. schema-validate the deploy/ manifests (a typo'd CRD field that renders
 #      without complaint must fail loudly), and
 #   2. exercise scripts/rename-placeholders.sh — the onboarding script every new
@@ -37,6 +37,9 @@ permissions: {}
 #      fails to build or a deploy/ tree that fails to render.
 #   7. bind the renamed scaffold's OpenBao role, ServiceAccount, and secret path
 #      to Platform's exact tenant policy and Kubernetes-auth role.
+#   8. keep the scaffold's initial CPU request at or above Platform's generated
+#      Deployment VPA floor so a fresh tenant does not start below its enforced
+#      recommendation floor.
 # This job runs ONLY in the template repo; it no-ops in tenants created from it
 # (the guard below is false there), mirroring how cd.yaml/release.yaml run only in
 # tenants. Tenants replace deploy/ with their own app and validate it via their
@@ -278,6 +281,8 @@ jobs:
         run: sh scripts/platform-tenant-envelope-contract.test.sh
       - name: 🌐 Validate Platform network-floor contract
         run: sh scripts/platform-network-floor-contract.test.sh
+      - name: 📈 Validate Platform VPA-floor contract
+        run: sh scripts/platform-vpa-floor-contract.test.sh
 
   # Platform admissibility gate (#71, epic #6 theme 4): the scaffold's promise is
   # "admissible on day one", so apply the platform's LIVE Kyverno admission policy
@@ -344,6 +349,8 @@ jobs:
         run: sh scripts/platform-tenant-envelope.test.sh
       - name: 🌐 Validate Platform network floor
         run: sh scripts/platform-network-floor.test.sh
+      - name: 📈 Validate Platform VPA floor
+        run: sh scripts/platform-vpa-floor.test.sh
       - name: 🛂 Apply admission policies to the rendered scaffold
         id: apply-admission-policies
         run: |

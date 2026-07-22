@@ -76,6 +76,7 @@ tenant still carrying these from an older sync can delete them for good):**
 | `scripts/tenant-rbac*.test.sh` | Proves the Platform tenant reconciliation identity can manage every rendered scaffold resource while cluster-scoped and interactive privileges stay denied |
 | `scripts/platform-tenant-envelope*.test.sh` | Binds the template's signed publisher and those workload-level models to Platform's live KRO and manual tenant registrations: private GHCR pull identity, cosign-verifying OCI source, managed Pod Security namespace, `tenant-edit` ServiceAccount binding, Flux source/impersonation/target namespace, and the exact OpenBao policy and Kubernetes-auth role that let the renamed tenant read and seed only its own app secrets |
 | `scripts/platform-network-floor*.test.sh` | Binds Platform's generated default-deny, DNS, and standard NetworkPolicy floor to the scaffold's required Gateway, namespace, CNPG, Kubernetes API, and DNS paths |
+| `scripts/platform-vpa-floor*.test.sh` | Keeps the scaffold's initial CPU request at or above Platform's generated Deployment VPA floor, with live-policy and mutation coverage |
 
 **Yours (list these in `.templatesyncignore`):**
 
@@ -108,6 +109,8 @@ scripts/platform-tenant-envelope.test.sh
 scripts/platform-tenant-envelope-contract.test.sh
 scripts/platform-network-floor.test.sh
 scripts/platform-network-floor-contract.test.sh
+scripts/platform-vpa-floor.test.sh
+scripts/platform-vpa-floor-contract.test.sh
 .github/workflows/validate-scaffold.yaml
 ```
 
@@ -141,5 +144,6 @@ sh scripts/pod-security-admission-contract.test.sh    # Pod Security workflow co
 sh scripts/tenant-rbac-contract.test.sh               # Platform tenant RBAC workflow contract
 sh scripts/platform-tenant-envelope-contract.test.sh  # live Platform tenant-envelope contract
 sh scripts/platform-network-floor-contract.test.sh    # generated Platform network-floor contract
+sh scripts/platform-vpa-floor-contract.test.sh        # generated Platform VPA-floor contract
 actionlint .github/workflows/*                         # workflows parse
 ```

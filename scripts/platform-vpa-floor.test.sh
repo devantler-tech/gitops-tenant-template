@@ -54,6 +54,7 @@ validate_vpa_floor() {
 		fail "expected exactly one Platform Deployment VPA CPU floor, found $platform_floor_count"
 	platform_floor_m=$(millicores "$platform_floors")
 
+	# shellcheck disable=SC2016
 	scaffold_requests=$(yq eval -r '
 		select(.apiVersion == "apps/v1" and .kind == "Deployment")
 		| .metadata.name as $workload_name
@@ -80,3 +81,50 @@ fi
 
 platform_root=${PLATFORM_ROOT:-$repo_root/.platform}
 validate_vpa_floor "$platform_root" "$repo_root"
+
+mutation_dir=$(mktemp -d)
+trap 'rm -rf "$mutation_dir"' EXIT
+
+platform_policy_rel=k8s/bases/infrastructure/cluster-policies/best-practices/auto-vpa.yaml
+mkdir -p "$mutation_dir/platform/$(dirname -- "$platform_policy_rel")" "$mutation_dir/scaffold/deploy"
+cp "$platform_root/$platform_policy_rel" "$mutation_dir/platform/$platform_policy_rel"
+cp "$repo_root/deploy/deployment.yaml" "$mutation_dir/scaffold/deploy/deployment.yaml"
+
+run_mutation() {
+	description=$1
+	platform_mutation=$2
+	scaffold_mutation=$3
+
+	cp "$platform_root/$platform_policy_rel" "$mutation_dir/platform/$platform_policy_rel"
+	cp "$repo_root/deploy/deployment.yaml" "$mutation_dir/scaffold/deploy/deployment.yaml"
+
+	if [ -n "$platform_mutation" ]; then
+		yq eval "$platform_mutation" "$mutation_dir/platform/$platform_policy_rel" > "$mutation_dir/platform-mutant.yaml"
+		mv "$mutation_dir/platform-mutant.yaml" "$mutation_dir/platform/$platform_policy_rel"
+	fi
+	if [ -n "$scaffold_mutation" ]; then
+		yq eval "$scaffold_mutation" "$mutation_dir/scaffold/deploy/deployment.yaml" > "$mutation_dir/scaffold-mutant.yaml"
+		mv "$mutation_dir/scaffold-mutant.yaml" "$mutation_dir/scaffold/deploy/deployment.yaml"
+	fi
+
+	if (validate_vpa_floor "$mutation_dir/platform" "$mutation_dir/scaffold") >/dev/null 2>&1; then
+		fail "mutation passed: $description"
+	fi
+}
+
+run_mutation "scaffold request lowered below the Platform floor" '' \
+	'.spec.template.spec.containers[0].resources.requests.cpu = "10m"'
+run_mutation "Platform Deployment VPA rule removed" \
+	'del(.spec.rules[] | select(.name == "generate-vpa-for-deployment"))' ''
+run_mutation "Platform floor raised above the scaffold request" \
+	'(.spec.rules[] | select(.name == "generate-vpa-for-deployment") | .["generate"].data.spec.resourcePolicy.containerPolicies[] | select(.containerName == "*") | .minAllowed.cpu) = "60m"' ''
+run_mutation "Platform Deployment VPA rule duplicated" \
+	'.spec.rules += [.spec.rules[] | select(.name == "generate-vpa-for-deployment")]' ''
+run_mutation "Platform CPU floor removed" \
+	'del(.spec.rules[] | select(.name == "generate-vpa-for-deployment") | .["generate"].data.spec.resourcePolicy.containerPolicies[] | select(.containerName == "*") | .minAllowed.cpu)' ''
+run_mutation "Platform CPU floor changed to a noncanonical quantity" \
+	'(.spec.rules[] | select(.name == "generate-vpa-for-deployment") | .["generate"].data.spec.resourcePolicy.containerPolicies[] | select(.containerName == "*") | .minAllowed.cpu) = "0.05"' ''
+run_mutation "scaffold application container duplicated" '' \
+	'.spec.template.spec.containers += [.spec.template.spec.containers[0]]'
+
+echo "PASS: Platform VPA floor contract (happy path + 7 safety mutations)"
