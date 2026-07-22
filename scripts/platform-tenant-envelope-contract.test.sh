@@ -39,6 +39,7 @@ validate_contract() {
 				and ((.with."sparse-checkout" | split("\n") | join("|")) ==
 					"k8s/bases/infrastructure/cluster-policies|" +
 					"k8s/bases/infrastructure/resource-graph-definitions/tenant|" +
+					"k8s/bases/infrastructure/vault-config/job.yaml|" +
 					"k8s/bases/apps/ascoachingogvaner|" +
 					"k8s/clusters/local/bootstrap/config-map.yaml|" +
 					"k8s/clusters/prod/bootstrap/config-map.yaml|")
@@ -65,7 +66,10 @@ validate_contract() {
 
 	for needle in \
 		'resource-graph-definitions/tenant/resource-graph-definition.yaml' \
+		'k8s/bases/infrastructure/vault-config/job.yaml' \
 		'k8s/bases/apps/ascoachingogvaner' \
+		'deploy/secretstore.yaml' \
+		'deploy/externalsecret.yaml' \
 		'namespace.yaml' \
 		'service-account.yaml' \
 		'external-secret.yaml' \
@@ -90,6 +94,11 @@ validate_contract() {
 		'serviceAccountName' \
 		'sourceRef' \
 		'targetNamespace' \
+		'validate_openbao_authorization' \
+		'secret/data/apps/' \
+		'secret/metadata/apps/' \
+		'bound_service_account_names' \
+		'bound_service_account_namespaces' \
 		'validate_platform' \
 		'run_mutation'
 	do
@@ -206,6 +215,8 @@ run_mutation() {
 
 run_mutation "Platform RGD checkout removed" \
 	'(.jobs.admissibility.steps[] | select(.with.repository == "devantler-tech/platform").with."sparse-checkout") |= sub("k8s/bases/infrastructure/resource-graph-definitions/tenant\\n"; "")' ''
+run_mutation "Platform OpenBao authorization checkout removed" \
+	'(.jobs.admissibility.steps[] | select(.with.repository == "devantler-tech/platform").with."sparse-checkout") |= sub("k8s/bases/infrastructure/vault-config/job.yaml\\n"; "")' ''
 run_mutation "live envelope invocation removed" \
 	'del(.jobs.admissibility.steps[] | select(.run == "sh scripts/platform-tenant-envelope.test.sh"))' ''
 run_mutation "contract invocation removed" \
@@ -216,6 +227,8 @@ run_mutation "SOPS variant validation removed" '' '/kustomizationSops/d'
 run_mutation "target namespace validation removed" '' '/targetNamespace/d'
 run_mutation "private artifact credential validation removed" '' '/ghcrAuth/d'
 run_mutation "signed publisher validation removed" '' '/publish-app\.yaml/d'
+run_mutation "OpenBao authorization validation removed" '' \
+	'/validate_openbao_authorization/d'
 run_mutation "publisher baseline invocation removed" '' \
 	'/^[[:space:]]*validate_publish_workflow /d'
 run_mutation "README tenant-envelope runtime marker removed" '' '' '' '' \
