@@ -70,6 +70,7 @@ validate_contract() {
 		'Platform Deployment VPA rule removed' \
 		'Platform floor raised above the scaffold request' \
 		'Platform Deployment VPA rule duplicated' \
+		'Platform Deployment VPA rule duplicated under another name' \
 		'Platform CPU floor changed to a noncanonical quantity' \
 		'scaffold application container duplicated'
 	do

@@ -34,9 +34,10 @@ validate_vpa_floor() {
 	[ -f "$platform_policy" ] || fail "Platform auto-vpa policy is missing: $platform_policy"
 	[ -f "$deployment" ] || fail "scaffold Deployment is missing: $deployment"
 
-	platform_floors=$(yq eval -r '
+	# shellcheck disable=SC2016
+	platform_floor_records=$(yq eval -r '
 		.spec.rules[]
-		| select(.name == "generate-vpa-for-deployment")
+		| .name as $rule_name
 		| select(
 			(.match.resources.kinds | length) == 1
 			and .match.resources.kinds[0] == "Deployment"
@@ -47,11 +48,16 @@ validate_vpa_floor() {
 		| select(.["generate"]["data"]["spec"]["targetRef"]["kind"] == "Deployment")
 		| .["generate"]["data"]["spec"]["resourcePolicy"]["containerPolicies"][]
 		| select(.["containerName"] == "*")
-		| .["minAllowed"]["cpu"]
+		| [$rule_name, .["minAllowed"]["cpu"]]
+		| @tsv
 	' "$platform_policy")
-	platform_floor_count=$(printf '%s\n' "$platform_floors" | awk 'NF { count++ } END { print count + 0 }')
+	platform_floor_count=$(printf '%s\n' "$platform_floor_records" | awk 'NF { count++ } END { print count + 0 }')
 	[ "$platform_floor_count" -eq 1 ] ||
 		fail "expected exactly one Platform Deployment VPA CPU floor, found $platform_floor_count"
+	platform_rule_name=$(printf '%s\n' "$platform_floor_records" | awk -F '\t' 'NR == 1 { print $1 }')
+	[ "$platform_rule_name" = "generate-vpa-for-deployment" ] ||
+		fail "Platform Deployment VPA floor must use the canonical generate-vpa-for-deployment rule"
+	platform_floors=$(printf '%s\n' "$platform_floor_records" | awk -F '\t' 'NR == 1 { print $2 }')
 	platform_floor_m=$(millicores "$platform_floors")
 
 	# shellcheck disable=SC2016
@@ -120,6 +126,8 @@ run_mutation "Platform floor raised above the scaffold request" \
 	'(.spec.rules[] | select(.name == "generate-vpa-for-deployment") | .["generate"].data.spec.resourcePolicy.containerPolicies[] | select(.containerName == "*") | .minAllowed.cpu) = "60m"' ''
 run_mutation "Platform Deployment VPA rule duplicated" \
 	'.spec.rules += [.spec.rules[] | select(.name == "generate-vpa-for-deployment")]' ''
+run_mutation "Platform Deployment VPA rule duplicated under another name" \
+	'.spec.rules += [(.spec.rules[] | select(.name == "generate-vpa-for-deployment") | .name = "duplicate-vpa-for-deployment")]' ''
 run_mutation "Platform CPU floor removed" \
 	'del(.spec.rules[] | select(.name == "generate-vpa-for-deployment") | .["generate"].data.spec.resourcePolicy.containerPolicies[] | select(.containerName == "*") | .minAllowed.cpu)' ''
 run_mutation "Platform CPU floor changed to a noncanonical quantity" \
@@ -127,4 +135,4 @@ run_mutation "Platform CPU floor changed to a noncanonical quantity" \
 run_mutation "scaffold application container duplicated" '' \
 	'.spec.template.spec.containers += [.spec.template.spec.containers[0]]'
 
-echo "PASS: Platform VPA floor contract (happy path + 7 safety mutations)"
+echo "PASS: Platform VPA floor contract (happy path + 8 safety mutations)"
