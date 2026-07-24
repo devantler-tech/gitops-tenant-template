@@ -67,7 +67,7 @@ jobs:
         with:
           egress-policy: audit
       - name: 📥 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false # read-only job; never pushes, so don't keep the token
       - name: 🧪 Validate drift-gate contract
@@ -323,11 +323,11 @@ jobs:
         with:
           egress-policy: audit
       - name: 📥 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: 📥 Checkout Platform contracts (live main — drift is the signal)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: devantler-tech/platform
           path: .platform
@@ -340,7 +340,7 @@ jobs:
             k8s/clusters/prod/bootstrap/config-map.yaml
           persist-credentials: false
       - name: 📥 Checkout shared kyverno-policies (live main)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: devantler-tech/kyverno-policies
           path: .shared-policies
@@ -726,11 +726,11 @@ jobs:
         with:
           egress-policy: audit
       - name: 📥 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: 📥 Checkout Platform tenant roles (live main — drift is the signal)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: devantler-tech/platform
           path: .platform
